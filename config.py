@@ -34,8 +34,8 @@ UNIVERSE = (
 )
 
 # How many of the top-ranked-by-skew tickers become premium-selling candidates.
-# Spec default is top 3 of 8; scaled down to match the smaller demo UNIVERSE.
-PREMIUM_SELL_COUNT = 1
+# Spec default: top 3 of 8.
+PREMIUM_SELL_COUNT = 3
 
 # ---------- OPTION CHAIN / RANKING ----------
 # Target delta for the short put leg (spec section 4).
