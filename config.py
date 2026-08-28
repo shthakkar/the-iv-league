@@ -24,7 +24,14 @@ if not API_KEY or not API_SECRET:
 # Demo default — full V1 spec universe is SPY QQQ NVDA TSLA AAPL AMZN MSFT META.
 # Kept small here so chain-fetch/ranking stays fast to iterate on and cheap to
 # test against; add tickers freely, nothing else needs to change.
-UNIVERSE = ["SPY", "QQQ", "NVDA", "TSLA"]
+# Override for a one-off run without editing this file, e.g.:
+#   UNIVERSE_OVERRIDE=SPY,QQQ,NVDA,TSLA,AAPL,AMZN,MSFT,META python3 strategy_engine.py
+_universe_override = os.environ.get("UNIVERSE_OVERRIDE", "")
+UNIVERSE = (
+    [t.strip().upper() for t in _universe_override.split(",") if t.strip()]
+    if _universe_override
+    else ["SPY", "QQQ", "NVDA", "TSLA"]
+)
 
 # How many of the top-ranked-by-skew tickers become premium-selling candidates.
 # Spec default is top 3 of 8; scaled down to match the smaller demo UNIVERSE.
