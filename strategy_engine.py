@@ -16,11 +16,7 @@ from dataclasses import dataclass
 
 from alpaca.data.historical.option import OptionHistoricalDataClient
 from alpaca.data.historical.stock import StockHistoricalDataClient
-from alpaca.data.requests import (
-    OptionChainRequest,
-    StockLatestQuoteRequest,
-    StockLatestTradeRequest,
-)
+from alpaca.data.requests import OptionChainRequest, StockLatestTradeRequest
 
 import config
 
@@ -87,16 +83,10 @@ def _fetch_liquid_chain(ticker: str, spot: float, expiration: str) -> tuple[dict
 
 
 def _get_spot_price(ticker: str) -> float:
-    """Bid/ask midpoint when both sides are quoted; otherwise fall back to the
-    last trade price. Near/after the close, NBBO quotes can come back with one
-    leg at 0 (seen live on AAPL/TSLA/MSFT) — naively midpointing that silently
-    halves the price, which then poisons the whole strike-range search."""
-    quote = _stock_client.get_stock_latest_quote(
-        StockLatestQuoteRequest(symbol_or_symbols=ticker)
-    )[ticker]
-    if quote.bid_price > 0 and quote.ask_price > 0:
-        return (quote.bid_price + quote.ask_price) / 2
-
+    """Last trade price. UNIVERSE names are all liquid enough that this is a
+    fine spot proxy, and it sidesteps the bid/ask quote occasionally coming
+    back with one leg at 0 near/after the close (seen live on AAPL/TSLA/MSFT
+    — a naive (bid+ask)/2 there silently halves the price)."""
     trade = _stock_client.get_stock_latest_trade(
         StockLatestTradeRequest(symbol_or_symbols=ticker)
     )[ticker]
