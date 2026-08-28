@@ -16,7 +16,11 @@ from dataclasses import dataclass
 
 from alpaca.data.historical.option import OptionHistoricalDataClient
 from alpaca.data.historical.stock import StockHistoricalDataClient
-from alpaca.data.requests import OptionChainRequest, StockLatestQuoteRequest
+from alpaca.data.requests import (
+    OptionChainRequest,
+    StockLatestQuoteRequest,
+    StockLatestTradeRequest,
+)
 
 import config
 
@@ -82,11 +86,25 @@ def _fetch_liquid_chain(ticker: str, spot: float, expiration: str) -> tuple[dict
     return calls, puts
 
 
-def rank_ticker(ticker: str, expiration: str) -> RankedCandidate | SkippedTicker:
+def _get_spot_price(ticker: str) -> float:
+    """Bid/ask midpoint when both sides are quoted; otherwise fall back to the
+    last trade price. Near/after the close, NBBO quotes can come back with one
+    leg at 0 (seen live on AAPL/TSLA/MSFT) — naively midpointing that silently
+    halves the price, which then poisons the whole strike-range search."""
     quote = _stock_client.get_stock_latest_quote(
         StockLatestQuoteRequest(symbol_or_symbols=ticker)
     )[ticker]
-    spot = (quote.bid_price + quote.ask_price) / 2
+    if quote.bid_price > 0 and quote.ask_price > 0:
+        return (quote.bid_price + quote.ask_price) / 2
+
+    trade = _stock_client.get_stock_latest_trade(
+        StockLatestTradeRequest(symbol_or_symbols=ticker)
+    )[ticker]
+    return trade.price
+
+
+def rank_ticker(ticker: str, expiration: str) -> RankedCandidate | SkippedTicker:
+    spot = _get_spot_price(ticker)
     if spot <= 0:
         return SkippedTicker(ticker, "no valid spot quote")
 
