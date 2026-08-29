@@ -299,6 +299,20 @@ exists, the Strategist Agent can determine whether 15Δ, IV skew, 9:40
 entry, 2:30 exit, 50% capture, 3× stop, top-3 selection, and $5K directional
 allocation actually improve the strategy.
 
+## 31. Testing / Mock Data Strategy
+
+Later pipeline stages (selection, sizing, Risk Manager, Execution Agent)
+are deterministic code and shouldn't need a live market or a fresh Analyst
+subagent run every time they're touched. Practice: capture one real
+morning's output to `mock_cache/<date>/` (news, Analyst reads, ranking,
+selection) once, then reuse it as a fixture — deterministic code gets
+built/re-tested against a frozen real morning instantly, no cost or agent
+latency. When markets are closed, a nearby real option-chain expiration
+may stand in for ranking/chain-fetch testing (never synthetic/faked data),
+clearly labeled as a stand-in and never treated as a live trading signal.
+Judgment-driven output (Analyst reads, news) is never synthesized this
+way — only captured from a real run.
+
 ## Constraint: must use Alpaca's Trading API, MCP server, and CLI
 
 All three Alpaca surfaces — the [Trading API](https://docs.alpaca.markets/us/docs/alpaca-mcp-server)

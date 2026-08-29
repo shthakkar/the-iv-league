@@ -46,6 +46,20 @@ TARGET_PUT_DELTA = 0.15
 # UNIVERSE names without dragging in the whole deep ITM/OTM chain.
 STRIKE_RANGE_PCT = 0.20
 
+# ---------- DIRECTIONAL SELECTION ----------
+# Minimum Analyst confidence (0-100) for a directional candidate to be
+# selected for a trade (spec section 14: "only candidates with sufficient
+# confidence"). Not spec-fixed — chosen from the one validated live run in
+# PROGRESS.md, where decisive reads landed at 62 and UNDECIDED/conflicted
+# reads landed at 30; 55 sits clearly above the noise floor without being
+# tuned to that single sample. Revisit once the Strategist Agent has real
+# trade history to check it against (spec section 25).
+MIN_DIRECTIONAL_CONFIDENCE = 55
+
+# Max directional trades selected per day — spec-fixed at 3 ("select up to
+# 3", spec section 14), unlike MIN_DIRECTIONAL_CONFIDENCE above.
+MAX_DIRECTIONAL_SELECTED = 3
+
 # Expiration date to treat as "0DTE" for this run, YYYY-MM-DD. In production
 # this should be computed as today's date (or skipped if no 0DTE chain
 # exists for a ticker). Overridable here for testing when markets are

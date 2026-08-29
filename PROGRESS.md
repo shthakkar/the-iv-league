@@ -119,6 +119,89 @@ Applying spec §14 (select up to 3, confidence-gated, skip UNDECIDED) →
 **META and MSFT → Buy Call.** Every UNDECIDED call cites a specific
 conflicting-signal reason, not a generic hedge.
 
+## Component 4 (partial): Directional Selection — ✅ DONE, tested
+
+Files: `directional_selection.py`. Config additions: `config.py`'s
+`MIN_DIRECTIONAL_CONFIDENCE` (55) and `MAX_DIRECTIONAL_SELECTED` (3, spec
+§14's fixed cap).
+
+Deterministic (spec §30 — no LLM here on purpose): takes the Analyst's 5
+structured reads, drops any `UNDECIDED` regardless of confidence, drops
+anything below `MIN_DIRECTIONAL_CONFIDENCE`, sorts the rest by confidence
+descending, keeps the top `MAX_DIRECTIONAL_SELECTED`. Every rejection
+carries a concrete `reject_reason` (which rule it failed), never a silent
+drop.
+
+**Handoff contract established**: the Analyst returns a fixed markdown
+template (Ticker/Direction/Confidence/Reason/Catalysts/Risks); the
+orchestrating session converts that into a JSON list
+(`{ticker, direction, confidence, reason, catalysts, risks}`) before
+calling this script — keeps the actual selection 100% code, with JSON
+conversion as the only LLM-touched step, and that step is low-risk
+transcription against a rigid template, not a judgment call.
+
+**Validated two ways**:
+1. **Real data, full 8-ticker universe** (SPY QQQ NVDA TSLA AAPL AMZN MSFT
+   META, spec §2) — ranked by IV skew against the Aug 31 chain (nearest
+   available, markets closed for the weekend — see the mock fixture's
+   README for why), split top-3/bottom-5, all 5 directional candidates
+   given real Analyst subagent reads against today's (2026-08-28) actual
+   completed first-10-minute session + the prefetched news cache:
+
+   | Ticker | Direction | Confidence | Selected? |
+   |---|---|---|---|
+   | MSFT | BULLISH | 65 | ✅ |
+   | META | BULLISH | 60 | ✅ |
+   | QQQ  | BULLISH | 55 | ✅ |
+   | SPY  | UNDECIDED | 30 | ❌ (UNDECIDED) |
+   | TSLA | UNDECIDED | 30 | ❌ (UNDECIDED) |
+
+   Premium-selling top 3 (same run): NVDA, AAPL, AMZN.
+2. **Synthetic edge cases** — a candidate with confidence 95 but
+   `UNDECIDED` correctly rejected regardless of score; a 4th candidate
+   that clears the confidence bar correctly bumped for exceeding the
+   top-3 cap (`"ranked #4 of 4 eligible, exceeds max_selected (3)"`).
+
+**Mock fixture**: this real run is captured to `mock_cache/2026-08-28/`
+(news, Analyst reads, ranking, selection result — see its README) so
+`directional_selection.py` and future sizing/Risk Manager work can be
+tested against it instantly without re-hitting live data or re-running
+the (slow, 5-way-parallel) Analyst subagents. `scripts/save_mock_fixture.py`
+regenerates the cheap-to-reproduce pieces (ranking + selection) on demand;
+the Analyst/news pieces are captured by hand from a real run only (spec
+§31 has the general policy).
+
+**Not yet built**: turning a selected candidate into an actual contract
+(ATM/slightly-ITM 0DTE call or put, spec §15), sizing within the $5,000
+directional cap (§16), and the Risk Manager approve/reject step (§22) —
+this component only covers the selection step, not the trade itself.
+
+## Also built this session: morning-trigger scaffolding (not yet installed)
+
+Not a formal spec component, but real, working infra for Component 6's
+eventual orchestrator:
+- `prompts/morning_decision.md` — the headless decision-only prompt (ranks,
+  dispatches the Analyst, logs — explicitly never places an order; every
+  Alpaca order/cancel/mutate MCP tool is hard-blocked via
+  `--disallowedTools`, not just prompt instruction).
+- `scripts/run_morning_trigger.sh` — wrapper invoking `claude -p` with that
+  prompt, absolute `claude` binary path (launchd's PATH is minimal).
+- `prefetch_news.py` + `scripts/run_news_prefetch.sh` — deterministic
+  (no LLM) news prefetch for the full 8-ticker universe in one API call,
+  meant to fire at 9:30 ET so it's warm before the 9:41 decision run;
+  `.claude/agents/analyst.md` updated to read this cache first and only
+  fall back to a live `get_news` call if its ticker's bucket is empty.
+- Researched (via a background agent) how the sibling `alpacabot` project
+  handles unattended scheduling: `pmset repeat wake` + a bridging
+  caffeinate-only LaunchAgent (`StartCalendarInterval` as 5 weekday dicts,
+  no native Mon–Fri shorthand in launchd XML) + a per-process
+  `caffeinate -w $PID` tied to the run script's own lifetime. Plan is to
+  adapt this for our two triggers, but **nothing is installed yet** —
+  `launchctl load`/`pmset` changes are pending explicit go-ahead (system
+  state, not just repo files). Open question: whether `-dimsu` actually
+  holds through a closed lid on this Mac without external power/display —
+  untested in alpacabot itself either, so don't assume it works.
+
 ## Infra notes / gotchas (read before continuing)
 
 - **Alpaca CLI**: install via `go install github.com/alpacahq/cli/cmd/alpaca@latest`

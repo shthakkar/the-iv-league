@@ -1,0 +1,89 @@
+{
+  "selected": [
+    {
+      "ticker": "MSFT",
+      "direction": "BULLISH",
+      "confidence": 65,
+      "reason": "MSFT gapped essentially flat (+0.05%) but climbed through the first 10 minutes to +0.68%, finishing near the window high after a brief mid-window dip and recovery. Continues prior day's strength (Aug 27 daily +2.06%) and lines up with AI-stack-related news.",
+      "catalysts": [
+        "IREN CEO commentary positioning Microsoft/Nvidia as owning the full AI infrastructure stack",
+        "ChronoScale 50-MW AI compute deployment deal tied to Microsoft (Aug 27)",
+        "Carryover momentum from Aug 27 HUMAIN (Saudi Arabia) AI partnership announcement",
+        "General bullish AI-trade sentiment following Nvidia's results"
+      ],
+      "risks": [
+        "Trump administration reportedly weighing new semiconductor tariffs -- MSFT-relevant negative catalyst in two separate articles",
+        "Gap was essentially flat -- move is purely intraday-driven, included a real pullback before recovering",
+        "Much of the 'MSFT' news flow is actually macro/AI-sector noise, thinner idiosyncratic catalyst set than headline count suggests"
+      ]
+    },
+    {
+      "ticker": "META",
+      "direction": "BULLISH",
+      "confidence": 60,
+      "reason": "META opened flat (+0.14% gap), dipped in the first minute, then climbed steadily to +1.34% by 9:40, closing near the window high (88% of range) -- a clean one-directional recovery. Momentum continued past the window.",
+      "catalysts": [
+        "Rebound from Thursday's overreaction to Meta's ~$17-18B child-safety settlement; Cramer called the negative reaction 'ridiculous'",
+        "Rosenblatt reiterated Buy, raised PT to $886 (08/27)"
+      ],
+      "risks": [
+        "No fresh ticker-specific catalyst dated to the 08/28 session itself -- reads as continuation/recovery, could fade without a story behind it",
+        "Gap was essentially flat -- no gap-and-continue confirmation",
+        "Mixed analyst tape: Truist cut PT to $763 (still Buy), Benchmark/Needham reiterated Hold",
+        "Ongoing regulatory/legal overhang (EU fine push, YouTube/FTC probe, exec departure to OpenAI)"
+      ]
+    },
+    {
+      "ticker": "QQQ",
+      "direction": "BULLISH",
+      "confidence": 55,
+      "reason": "QQQ gapped down slightly (-0.19%) but reversed off a 9:33 low (718.18) and climbed steadily to close the first-10-min window at 721.31, right at the window high (721.35) -- a clean, one-directional recovery rather than a spike-and-fade. Overturns the modest pre-market weakness flagged in Benzinga's Jackson Hole preview piece; price action weighted over stale pre-open framing. Net move is still small (+0.22%), capping confidence for an index ETF.",
+      "catalysts": [
+        "NVDA's best day since April 2025 (+9%, Aug 27) lifted tech/semis broadly -- a genuine QQQ tailwind given index weighting",
+        "$3.67B QQQ inflows same day as $3.82B SPY outflows (Aug 27) -- real rotation into Nasdaq-heavy exposure"
+      ],
+      "risks": [
+        "Kevin Warsh's Jackson Hole speech scheduled later this session -- major macro event risk for a 0DTE position",
+        "Net 10-min move (+0.22%) small relative to the window's own intraday swing (~0.44%)",
+        "Pre-market news directly conflicted with the actual tape",
+        "Escalating US-Iran economic war flagged as a live macro risk factor"
+      ]
+    }
+  ],
+  "rejected": [
+    {
+      "ticker": "SPY",
+      "direction": "UNDECIDED",
+      "confidence": 30,
+      "reason": "SPY opened essentially flat (+0.07% gap) and closed the window at a clean but tiny +0.10% climb, ending at the window high after an early dip -- directionally clean but far too small in magnitude to clear the bar for an index ETF with no ticker-specific catalyst.",
+      "catalysts": [],
+      "risks": [
+        "Move size (+0.10%) is inside normal noise for SPY",
+        "Hawkish Fed commentary from Warsh (rate-hike odds jumping to ~60%) is a same-day bearish macro risk",
+        "Chicago PMI badly missed (47.1 vs 57.9 est.) shortly after the window",
+        "Volume data is IEX-only, not SIP -- can't reliably gauge true participation"
+      ],
+      "reject_reason": "UNDECIDED"
+    },
+    {
+      "ticker": "TSLA",
+      "direction": "UNDECIDED",
+      "confidence": 30,
+      "reason": "TSLA gapped up +0.64% but the first 10 minutes were a round-trip: dropped immediately, rallied to a session high by 9:35, then faded back down, closing the window at a net -0.07% almost exactly mid-range on high volume (~2.3M shares) -- textbook high-volume/flat-net-move indecision.",
+      "catalysts": [
+        "Tesla/Einride Semi truck delivery timeline confirmed -- published too late in the window to explain the earlier whipsaw",
+        "Tesla denied FSD China shutdown rumors (mildly positive, prior day)"
+      ],
+      "risks": [
+        "Gap direction and intraday direction disagree in the first minute",
+        "High volume with essentially flat net return signals a genuine two-sided fight",
+        "Close sits mid-range -- neither bulls nor bears controlled the tape",
+        "Optimus-rival funding news is a mild overhang not reflected cleanly in price action",
+        "0DTE decay risk elevated when entering on an indecisive/choppy open"
+      ],
+      "reject_reason": "UNDECIDED"
+    }
+  ],
+  "min_confidence_used": 55,
+  "max_selected": 3
+}
