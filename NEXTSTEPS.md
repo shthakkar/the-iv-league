@@ -120,6 +120,16 @@ Once Risk Manager approves something:
   (what the Strategist hands the reviewer, what "approve"/"reject" writes
   back) needs designing alongside the Strategist Agent when that's picked
   up.
+- **Dashboard** (spec §29) — the page itself is done:
+  `dashboard/index.html` + `dashboard/data.json` (sample) +
+  `dashboard/README.md` (schema). What's left is blocked on the Execution
+  Agent existing, since there's no real trade data to export yet: where
+  the Alpaca-CLI export step lives (inside the Execution Agent's loop vs.
+  a separate script it shells out to), and the GitHub Pages publish
+  mechanism (commit-on-trade vs. scheduled rebuild) — both still open, see
+  PROGRESS.md's Dashboard entry. Turning GitHub Pages on for this repo
+  (Settings → Pages → serve from `/dashboard`) is a 2-minute task whenever
+  there's something worth looking at live — hasn't been done yet.
 - **Position recycling** (spec §10) — re-entering after an early
   profitable close. Cut from MVP scope; add once the base execution loop
   is solid.

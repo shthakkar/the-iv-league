@@ -258,7 +258,28 @@ distance/expected move), Analyst output (direction, confidence, news,
 catalysts, reason), trade (entry/exit timestamp/price, quantity, P/L, exit
 reason).
 
-## 29. High-Level System Architecture
+## 29. Dashboard (Trade Journal & P&L)
+
+A simple static HTML page — hosted on GitHub Pages — giving a
+human-readable view of trading state: current P&L, account balance, the
+active strategy version (V1.0, V1.1, ...), and a chronological trade
+journal.
+
+Updated on each trade taken, not live/streaming. When the Execution Agent
+logs a trade (§28), a lightweight export step pulls the current account
+snapshot via the **Alpaca CLI** (balance, positions) and appends the trade
+to a JSON file the static page fetches client-side. GitHub Pages serves
+static files only — the JSON snapshot is the sync mechanism, there's no
+backend to query live.
+
+Also reflects strategy-version changes from the evolution loop (§26-27):
+once a HITL-approved change reaches Production, the dashboard shows the
+new active version.
+
+Not itself an agent — a passive observer of the other six components, not
+part of the daily call sequence.
+
+## 30. High-Level System Architecture
 
 ```
                     MARKET DATA
@@ -292,7 +313,7 @@ reason).
                                      → Backtest → New Strategy
 ```
 
-## 30. V1 Strategy Summary
+## 31. V1 Strategy Summary
 
 **At 9:40 AM**, Universe: SPY QQQ NVDA TSLA AAPL AMZN MSFT META.
 **Rank**: 15Δ Put IV − ATM IV. **Top 3**: sell 0DTE ~15Δ puts, ~95% capital,
@@ -301,7 +322,7 @@ news/events/first-10-min/price action/market context, select up to 3
 (Bullish→Call, Bearish→Put, Undecided→no trade), max $5,000 total premium,
 entry ~9:40, exit 2:30 PM, no directional profit cap in V1.
 
-## 31. Core Philosophy
+## 32. Core Philosophy
 
 Responsibilities intentionally separated:
 - **Analyst Agent**: "What direction does the market appear to favor?"
@@ -310,6 +331,8 @@ Responsibilities intentionally separated:
 - **Execution Agent**: "Execute and manage the predefined rules."
 - **Strategist Agent**: "What did we learn, and what should we test next?"
 - **HITL Review**: "Is this proposed change worth testing?"
+- **Dashboard**: not a decision-maker — the human-readable record of what
+  the other six did.
 
 AI agents should **not replace deterministic risk and execution logic**. The
 goal of V1 is not the perfect strategy — it's a clean, measurable system
@@ -318,7 +341,7 @@ exists, the Strategist Agent can determine whether 15Δ, IV skew, 9:40
 entry, 2:30 exit, 50% capture, 3× stop, top-3 selection, and $5K directional
 allocation actually improve the strategy.
 
-## 32. Testing / Mock Data Strategy
+## 33. Testing / Mock Data Strategy
 
 Later pipeline stages (selection, sizing, Risk Manager, Execution Agent)
 are deterministic code and shouldn't need a live market or a fresh Analyst

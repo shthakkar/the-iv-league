@@ -1,0 +1,300 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0DTE Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0e0f0d;
+    --panel-solid:#161810;
+    --border:#2a2d24;
+    --border-soft:#20221b;
+    --text:#e9e9e1;
+    --text-dim:#8d9186;
+    --text-faint:#5c5f56;
+    --judgment:#e8a33d;
+    --deterministic:#4fd1c5;
+    --human:#b9a6e8;
+    --good:#6fcf97;
+    --bad:#e8746a;
+    --mono:'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+    --sans:'IBM Plex Sans', system-ui, -apple-system, sans-serif;
+  }
+  *{box-sizing:border-box;}
+  body{
+    background:var(--bg); color:var(--text); font-family:var(--sans);
+    margin:0; padding:40px 24px 80px; -webkit-font-smoothing:antialiased;
+  }
+  a{color:inherit;}
+  .wrap{max-width:1040px; margin:0 auto;}
+
+  .crumb{
+    font-family:var(--mono); font-size:12px; letter-spacing:.08em;
+    color:var(--text-faint); display:flex; gap:8px; align-items:center;
+    margin-bottom:18px;
+  }
+  .crumb .sep{color:var(--border);}
+  .crumb .here{color:var(--text-dim);}
+
+  header.top{
+    display:flex; flex-wrap:wrap; align-items:baseline; justify-content:space-between;
+    gap:12px; margin-bottom:8px;
+  }
+  h1{
+    font-family:var(--mono); font-weight:600; font-size:clamp(24px,3.6vw,34px);
+    letter-spacing:-.01em; margin:0;
+  }
+  .meta{
+    font-family:var(--mono); font-size:12px; color:var(--text-faint);
+    display:flex; gap:14px; flex-wrap:wrap; align-items:center;
+  }
+  .version-badge{
+    font-family:var(--mono); font-size:11px; letter-spacing:.04em;
+    color:var(--deterministic); border:1px solid var(--deterministic);
+    border-radius:99px; padding:3px 10px;
+  }
+
+  .stat-grid{
+    display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr));
+    gap:14px; margin:28px 0 34px;
+  }
+  .stat-tile{
+    border:1px solid var(--border); border-radius:8px; background:var(--panel-solid);
+    padding:16px 18px;
+  }
+  .stat-label{
+    font-family:var(--mono); font-size:10.5px; letter-spacing:.06em;
+    color:var(--text-faint); margin-bottom:8px;
+  }
+  .stat-value{
+    font-family:var(--mono); font-size:26px; font-weight:600;
+    font-variant-numeric:tabular-nums;
+  }
+  .stat-value.positive{color:var(--good);}
+  .stat-value.negative{color:var(--bad);}
+
+  .journal-head{
+    display:flex; align-items:baseline; justify-content:space-between;
+    margin-bottom:14px; flex-wrap:wrap; gap:8px;
+  }
+  .journal-head h2{
+    font-family:var(--mono); font-size:15px; font-weight:600; margin:0;
+    letter-spacing:.02em;
+  }
+  .journal-head .count{
+    font-family:var(--mono); font-size:12px; color:var(--text-faint);
+  }
+
+  .table-frame{
+    border:1px solid var(--border-soft); border-radius:8px;
+    background:var(--panel-solid); overflow-x:auto;
+  }
+  table{width:100%; border-collapse:collapse; min-width:760px;}
+  thead th{
+    font-family:var(--mono); font-size:10.5px; letter-spacing:.05em;
+    color:var(--text-faint); text-align:left; font-weight:500;
+    padding:12px 14px; border-bottom:1px solid var(--border-soft);
+    white-space:nowrap;
+  }
+  tbody td{
+    font-family:var(--mono); font-size:12.5px; color:var(--text-dim);
+    padding:11px 14px; border-bottom:1px solid var(--border-soft);
+    font-variant-numeric:tabular-nums; white-space:nowrap;
+  }
+  tbody tr:last-child td{border-bottom:none;}
+  td.ticker{color:var(--text); font-weight:600;}
+  td.pnl.positive{color:var(--good);}
+  td.pnl.negative{color:var(--bad);}
+  .strategy-tag{
+    font-size:10px; letter-spacing:.03em; padding:2px 7px; border-radius:99px;
+    border:1px solid currentColor;
+  }
+  .strategy-tag.premium-selling{color:var(--deterministic);}
+  .strategy-tag.directional{color:var(--judgment);}
+  .status-pill{
+    font-size:10px; letter-spacing:.03em; padding:2px 7px; border-radius:99px;
+    display:inline-flex; align-items:center; gap:5px;
+  }
+  .status-pill::before{content:""; width:6px; height:6px; border-radius:50%; background:currentColor;}
+  .status-pill.closed{color:var(--text-faint); border:1px solid var(--border);}
+  .status-pill.open{color:var(--human); border:1px solid var(--human);}
+
+  .empty, .error{
+    font-family:var(--mono); font-size:13px; color:var(--text-faint);
+    padding:40px 20px; text-align:center;
+  }
+  .error{color:var(--bad);}
+
+  footer.note{
+    margin-top:34px; padding-top:18px; border-top:1px solid var(--border-soft);
+    font-family:var(--mono); font-size:11.5px; color:var(--text-faint); line-height:1.7;
+  }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="crumb">
+      <span>0DTE OPTIONS SYSTEM</span>
+      <span class="sep">/</span>
+      <span class="here">DASHBOARD</span>
+    </div>
+
+    <header class="top">
+      <h1>Trading Dashboard</h1>
+      <div class="meta">
+        <span id="updatedAt">loading&hellip;</span>
+        <span class="version-badge" id="versionBadge">v&mdash;</span>
+      </div>
+    </header>
+
+    <div class="stat-grid">
+      <div class="stat-tile">
+        <div class="stat-label">P&amp;L TODAY</div>
+        <div class="stat-value" id="pnlValue">&mdash;</div>
+      </div>
+      <div class="stat-tile">
+        <div class="stat-label">ACCOUNT BALANCE</div>
+        <div class="stat-value" id="balanceValue">&mdash;</div>
+      </div>
+      <div class="stat-tile">
+        <div class="stat-label">STRATEGY VERSION</div>
+        <div class="stat-value" id="strategyValue">&mdash;</div>
+      </div>
+      <div class="stat-tile">
+        <div class="stat-label">TRADES TODAY</div>
+        <div class="stat-value" id="tradesValue">&mdash;</div>
+      </div>
+    </div>
+
+    <div class="journal-head">
+      <h2>Trade Journal</h2>
+      <span class="count" id="journalCount"></span>
+    </div>
+
+    <div class="table-frame">
+      <table id="journalTable" hidden>
+        <thead>
+          <tr>
+            <th>Time (ET)</th>
+            <th>Ticker</th>
+            <th>Strategy</th>
+            <th>Side</th>
+            <th>Entry</th>
+            <th>Exit</th>
+            <th>Qty</th>
+            <th>P&amp;L</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody id="journalBody"></tbody>
+      </table>
+      <div class="empty" id="emptyState">loading trade journal&hellip;</div>
+    </div>
+
+    <footer class="note">
+      Static page &mdash; no backend. Reads <code>data.json</code> in this
+      folder, written by an export step (Alpaca CLI account snapshot +
+      Execution Agent trade log) after each trade. See
+      <code>dashboard/README.md</code> for the schema and
+      <code>PROGRESS.md</code> for what's real vs. sample here.
+    </footer>
+  </div>
+
+<script>
+(function(){
+  var fmtUSD = function(n){
+    var sign = n < 0 ? '-' : '';
+    return sign + '$' + Math.abs(n).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+  };
+  var fmtSigned = function(n){
+    return (n > 0 ? '+' : n < 0 ? '-' : '') + '$' + Math.abs(n).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+  };
+  var fmtTime = function(iso){
+    try{
+      var d = new Date(iso);
+      return d.toLocaleTimeString('en-US', {hour:'2-digit', minute:'2-digit', second:'2-digit', hour12:false, timeZone:'America/New_York'});
+    }catch(e){ return iso; }
+  };
+  var fmtUpdated = function(iso){
+    try{
+      var d = new Date(iso);
+      return 'updated ' + d.toLocaleString('en-US', {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit', hour12:false, timeZone:'America/New_York'}) + ' ET';
+    }catch(e){ return 'updated ' + iso; }
+  };
+  var sideLabel = function(side){
+    return String(side).replace(/_/g, ' ');
+  };
+
+  fetch('./data.json', {cache:'no-store'})
+    .then(function(res){
+      if(!res.ok) throw new Error('HTTP ' + res.status);
+      return res.json();
+    })
+    .then(function(data){
+      document.getElementById('updatedAt').textContent = fmtUpdated(data.updated_at);
+      document.getElementById('versionBadge').textContent = data.strategy_version || 'v—';
+      document.getElementById('strategyValue').textContent = data.strategy_version || '—';
+
+      var acct = data.account || {};
+      var pnl = typeof acct.daily_pnl === 'number' ? acct.daily_pnl : 0;
+      var pnlEl = document.getElementById('pnlValue');
+      pnlEl.textContent = fmtSigned(pnl);
+      pnlEl.classList.add(pnl > 0 ? 'positive' : pnl < 0 ? 'negative' : '');
+
+      document.getElementById('balanceValue').textContent = fmtUSD(acct.balance || 0);
+
+      var trades = Array.isArray(data.trades) ? data.trades.slice() : [];
+      trades.sort(function(a,b){ return new Date(b.timestamp) - new Date(a.timestamp); });
+
+      document.getElementById('tradesValue').textContent = trades.length;
+      document.getElementById('journalCount').textContent = trades.length + ' trade' + (trades.length === 1 ? '' : 's');
+
+      var tbody = document.getElementById('journalBody');
+      var table = document.getElementById('journalTable');
+      var empty = document.getElementById('emptyState');
+
+      if(trades.length === 0){
+        empty.textContent = 'no trades yet today';
+        return;
+      }
+
+      trades.forEach(function(t){
+        var tr = document.createElement('tr');
+
+        var pnlText = (t.pnl === null || t.pnl === undefined) ? '—' : fmtSigned(t.pnl);
+        var pnlClass = (t.pnl > 0) ? 'positive' : (t.pnl < 0) ? 'negative' : '';
+        var strategyClass = t.strategy === 'directional' ? 'directional' : 'premium-selling';
+        var statusClass = t.status === 'OPEN' ? 'open' : 'closed';
+
+        tr.innerHTML =
+          '<td>' + fmtTime(t.timestamp) + '</td>' +
+          '<td class="ticker">' + t.ticker + '</td>' +
+          '<td><span class="strategy-tag ' + strategyClass + '">' + t.strategy + '</span></td>' +
+          '<td>' + sideLabel(t.side) + '</td>' +
+          '<td>' + (t.entry_price != null ? t.entry_price.toFixed(2) : '—') + '</td>' +
+          '<td>' + (t.exit_price != null ? t.exit_price.toFixed(2) : '—') + '</td>' +
+          '<td>' + t.quantity + '</td>' +
+          '<td class="pnl ' + pnlClass + '">' + pnlText + '</td>' +
+          '<td><span class="status-pill ' + statusClass + '">' + t.status + '</span></td>';
+        tbody.appendChild(tr);
+      });
+
+      table.hidden = false;
+      empty.hidden = true;
+    })
+    .catch(function(err){
+      document.getElementById('updatedAt').textContent = 'load failed';
+      var empty = document.getElementById('emptyState');
+      empty.className = 'error';
+      empty.textContent = 'Could not load data.json (' + err.message + '). ' +
+        'Serve this folder over http(s) rather than opening the file directly ' +
+        '— e.g. "python3 -m http.server" in dashboard/, or view it via GitHub Pages.';
+    });
+})();
+</script>
+</body>
+</html>

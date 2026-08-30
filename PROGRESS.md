@@ -22,8 +22,10 @@ plan — see git log for the granular history.
   - **MCP server** (`alpaca-spike`, project-scoped in `.mcp.json`) →
     Analyst subagent's tool interface (bars, news, clock).
   - **CLI** (`alpacahq/cli`, installed via `go install`, not brew — see
-    Gotchas) → intended for ops/demo status checks and the EOD
-    force-liquidation safety net (not yet wired in).
+    Gotchas) → intended for ops/demo status checks, the EOD
+    force-liquidation safety net, and (as of the Dashboard design, spec
+    §29) the account-snapshot pull behind the Dashboard's data export
+    (none of these wired in yet).
 - **MVP universe**: `config.py`'s `UNIVERSE` defaults to `[SPY, QQQ, NVDA,
   TSLA]` (4, not the spec's 8) for faster iteration, but every ticker in the
   spec's 8 has been tested via `UNIVERSE_OVERRIDE` and works.
@@ -200,6 +202,44 @@ Approval → Production pipeline (§27), unchanged.
 reviewer edits? a Claude Code session?) and the handoff contract between
 the Strategist's output and whatever the reviewer sees — deferred to
 whenever the Strategist Agent itself gets built (see NEXTSTEPS.md).
+
+## Dashboard — 🟡 SCAFFOLDED, sample data only, 2026-08-30
+
+Files: `dashboard/index.html`, `dashboard/data.json`, `dashboard/README.md`.
+Spec §29. The page itself is done and smoke-tested (served locally via
+`python3 -m http.server`, verified it fetches `data.json` and renders the
+stat tiles + trade journal correctly, including OPEN-vs-CLOSED and
+positive/negative P&L styling). **`data.json` is hand-written sample
+data** — six illustrative trades across both strategies, nothing real —
+because nothing downstream of the Execution Agent exists yet to generate
+it.
+
+**What it is**: a static HTML page, hosted on GitHub Pages, showing
+current P&L, account balance, active strategy version, and a trade
+journal. Updated on each trade — an export step (fired from wherever the
+Execution Agent logs a trade, §28) pulls the account snapshot via the
+**Alpaca CLI** and writes/appends a JSON file the page fetches
+client-side. No backend, so no live query — the JSON snapshot is the only
+sync mechanism GitHub Pages allows.
+
+**Why the CLI specifically**: this finally gives the CLI a concrete job.
+It was registered for the hackathon's "use all three Alpaca surfaces"
+requirement but sat unused (see the surfaces bullet above) — the
+Dashboard's account pull is real, ongoing usage rather than a one-off demo
+call.
+
+**Decided** (see `dashboard/README.md` for the full schema): the
+`data.json` shape — `updated_at`, `strategy_version`, `account
+{starting_balance, balance, daily_pnl}`, and a `trades[]` array (id,
+timestamp, ticker, strategy, side, entry/exit price, quantity, pnl,
+status, exit_reason). Realized P&L only; OPEN trades show no P&L rather
+than a computed unrealized mark.
+
+**Not yet decided**: where the export step lives (inside the Execution
+Agent's own loop vs. a separate script it shells out to), the GitHub
+Pages publish mechanism (commit-on-trade vs. a scheduled rebuild), and
+whether OPEN trades ever get an unrealized-P&L column. Deferred to
+whenever the Execution Agent gets built.
 
 ## Also built this session: morning-trigger scaffolding (not yet installed)
 
