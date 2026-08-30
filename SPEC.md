@@ -1,8 +1,8 @@
 # 0DTE Multi-Agent Options Trading System — Strategy & Architecture Specification (V1)
 
-*This is the original spec as given at project kickoff, preserved verbatim so it
-survives independently of chat history. See PROGRESS.md for what's actually been
-built against it and where the MVP has intentionally deviated (scope cuts,
+*This is the living spec for the system, updated as the design evolves (see
+git history for changes). See PROGRESS.md for what's actually been built
+against it and where the MVP has intentionally deviated (scope cuts,
 universe size, etc.) — this file is the reference target, not a description of
 current state.*
 
@@ -223,15 +223,32 @@ signal add value? Does confidence correlate with returns? Are news-driven
 trades better? Does re-entry improve returns? Is 9:40 the optimal entry? Is
 2:30 the optimal exit? Are stop-loss rules appropriate?
 
-## 26. Strategy Evolution
+## 26. HITL Review (Human-in-the-Loop)
+
+Sits between the Strategist Agent's proposed change and any backtest work.
+A human reviews the proposal and returns **APPROVE** or **REJECT**:
+
+- **Reject**: the proposal is discarded and logged with the reviewer's
+  reason. No backtest, no further action.
+- **Approve**: the proposal proceeds into the pipeline below (§27) —
+  Backtest → Compare against V1 → Paper Trading → Risk Approval →
+  Production.
+
+This is a separate gate from **Risk Approval** later in that same pipeline:
+HITL judges whether the *idea* is worth testing at all; the Risk Manager
+(§22) still separately gates real capital before anything goes live. The
+Strategist has no authority to advance its own proposals past this point —
+mirrors the Analyst's no-execution-authority rule (§12).
+
+## 27. Strategy Evolution
 
 Strategist Agent does **not** directly modify production strategy:
-Trading Results → Strategist Agent → Proposed Strategy Change → Backtest →
-Compare against V1 → Paper Trading → Risk Approval → Production. Every
-strategy version tracked (V1.0, V1.1, ...). Never allow the system to
-silently change live trading rules.
+Trading Results → Strategist Agent → Proposed Strategy Change → HITL
+Review (§26) → Backtest → Compare against V1 → Paper Trading → Risk
+Approval → Production. Every strategy version tracked (V1.0, V1.1, ...).
+Never allow the system to silently change live trading rules.
 
-## 27. Data Logging
+## 28. Data Logging
 
 Every decision logged: market snapshot (timestamp, ticker, price, volume,
 VWAP, gap %, first-10-min return, market return), option snapshot
@@ -241,7 +258,7 @@ distance/expected move), Analyst output (direction, confidence, news,
 catalysts, reason), trade (entry/exit timestamp/price, quantity, P/L, exit
 reason).
 
-## 28. High-Level System Architecture
+## 29. High-Level System Architecture
 
 ```
                     MARKET DATA
@@ -271,10 +288,11 @@ reason).
                               END OF DAY
                               TRADE LOGS
                               STRATEGIST AGENT
-                              Analyze → Propose → Backtest → New Strategy
+                              Analyze → Propose → HITL Approve/Reject
+                                     → Backtest → New Strategy
 ```
 
-## 29. V1 Strategy Summary
+## 30. V1 Strategy Summary
 
 **At 9:40 AM**, Universe: SPY QQQ NVDA TSLA AAPL AMZN MSFT META.
 **Rank**: 15Δ Put IV − ATM IV. **Top 3**: sell 0DTE ~15Δ puts, ~95% capital,
@@ -283,7 +301,7 @@ news/events/first-10-min/price action/market context, select up to 3
 (Bullish→Call, Bearish→Put, Undecided→no trade), max $5,000 total premium,
 entry ~9:40, exit 2:30 PM, no directional profit cap in V1.
 
-## 30. Core Philosophy
+## 31. Core Philosophy
 
 Responsibilities intentionally separated:
 - **Analyst Agent**: "What direction does the market appear to favor?"
@@ -291,6 +309,7 @@ Responsibilities intentionally separated:
 - **Risk Manager**: "Can we afford to take this trade?"
 - **Execution Agent**: "Execute and manage the predefined rules."
 - **Strategist Agent**: "What did we learn, and what should we test next?"
+- **HITL Review**: "Is this proposed change worth testing?"
 
 AI agents should **not replace deterministic risk and execution logic**. The
 goal of V1 is not the perfect strategy — it's a clean, measurable system
@@ -299,7 +318,7 @@ exists, the Strategist Agent can determine whether 15Δ, IV skew, 9:40
 entry, 2:30 exit, 50% capture, 3× stop, top-3 selection, and $5K directional
 allocation actually improve the strategy.
 
-## 31. Testing / Mock Data Strategy
+## 32. Testing / Mock Data Strategy
 
 Later pipeline stages (selection, sizing, Risk Manager, Execution Agent)
 are deterministic code and shouldn't need a live market or a fresh Analyst

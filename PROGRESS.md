@@ -32,6 +32,13 @@ plan — see git log for the granular history.
 - **News source**: Alpaca's own News API (`NewsClient`, Benzinga-sourced) —
   reinforces the "use Alpaca's API" requirement rather than diluting it with
   a third-party source, and it's free/already-authenticated.
+- **Strategy changes require human approval (HITL)**: added spec §26 — the
+  Strategist Agent's proposed changes go through an explicit human
+  approve/reject gate before any backtest work starts, not straight into
+  the Backtest → Paper Trading → Risk Approval pipeline. Mirrors the
+  Analyst's no-execution-authority rule (§12): the Strategist can *propose*,
+  never advance its own proposal. Decided 2026-08-30, before either the
+  Strategist or the gate itself is built — see Component 6 below.
 
 ## Component 1: Strategy Engine — ✅ DONE, tested
 
@@ -175,6 +182,24 @@ the Analyst/news pieces are captured by hand from a real run only (spec
 (ATM/slightly-ITM 0DTE call or put, spec §15), sizing within the $5,000
 directional cap (§16), and the Risk Manager approve/reject step (§22) —
 this component only covers the selection step, not the trade itself.
+
+## HITL Review Gate — design decision only, 2026-08-30
+
+Not a "component" in the build sense yet — no code exists for either side
+of it (the Strategist Agent isn't built, so there's nothing to gate).
+Recorded here because it changes the shape of spec §26-27's evolution
+pipeline before that work starts, not after.
+
+**What it is**: a human approve/reject checkpoint between the Strategist
+Agent's proposed strategy change and any backtest work (spec §26). Reject
+→ discard + log the reason, nothing else happens. Approve → the proposal
+enters the existing Backtest → Compare against V1 → Paper Trading → Risk
+Approval → Production pipeline (§27), unchanged.
+
+**Not yet decided**: the actual review surface (a CLI prompt? a file the
+reviewer edits? a Claude Code session?) and the handoff contract between
+the Strategist's output and whatever the reviewer sees — deferred to
+whenever the Strategist Agent itself gets built (see NEXTSTEPS.md).
 
 ## Also built this session: morning-trigger scaffolding (not yet installed)
 

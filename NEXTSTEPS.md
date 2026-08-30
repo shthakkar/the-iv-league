@@ -112,8 +112,14 @@ Once Risk Manager approves something:
 
 ## Deferred / not yet decided
 
-- **Strategist Agent** (spec §24-26, post-day backtesting/analysis loop)
-  — out of scope until there's actual trade history to analyze.
+- **Strategist Agent + HITL Review gate** (spec §24-27 — Strategist's
+  post-day backtesting/analysis loop, now gated by a human approve/reject
+  step (§26) before any proposal reaches Backtest) — out of scope until
+  there's actual trade history to analyze. HITL itself has no code to
+  build (it's a manual review step by design), but the handoff contract
+  (what the Strategist hands the reviewer, what "approve"/"reject" writes
+  back) needs designing alongside the Strategist Agent when that's picked
+  up.
 - **Position recycling** (spec §10) — re-entering after an early
   profitable close. Cut from MVP scope; add once the base execution loop
   is solid.
