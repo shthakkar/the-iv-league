@@ -137,6 +137,47 @@ plan — see git log for the granular history.
   positions by an order of magnitude versus what §8 describes). Revisit
   once position recycling exists and a real second wave of trades is
   possible. `MAX_DAILY_LOSS_PCT` is not going into `risk_manager.py`.
+- **Ranking-consistency gap closed, 2026-08-31**: `risk_manager.py`'s CLI
+  used to call `strategy_engine.rank_universe()` itself — a second,
+  independently-timed live chain fetch minutes after the one the
+  morning-decision prompt already did for Analyst dispatch/directional
+  selection. 0DTE IV skew moves fast enough that the two fetches could
+  disagree on which tickers were premium-selling vs. directional (a real
+  live example: the top-3 split shifted four times in ~10 minutes on
+  2026-08-31 — see that day's "First live trading day" entry below). Not
+  fixed same-day since it didn't cause an actual double-order that time
+  (the premium side happened to reject the overlapping ticker on cost
+  anyway) — logged in `NEXTSTEPS.md` and picked up as its own task.
+  Fixed by making `strategy_engine.py` the single ranking fetch for the
+  whole run: it gained a `--json` CLI mode (same
+  `{universe, expiration_used, ranked, skipped, premium_sell,
+  directional}` shape `scripts/save_mock_fixture.py` already wrote to
+  `mock_cache/<date>/strategy_ranking.json`); `risk_manager.py`'s CLI now
+  loads that cached file instead of re-fetching
+  (`risk_manager.py <ranking_result.json> <selection_result.json>`,
+  replacing the old `<expiration>` positional). `evaluate()` and the rest
+  of the sizing logic are unchanged. Verified: all 42 unit tests still
+  pass (CLI/`__main__` was never unit-tested, same convention as the rest
+  of this file); the chain was exercised both offline against
+  `mock_cache/2026-08-28/` (had to regenerate that fixture via
+  `save_mock_fixture.py` first — it predated `RankedCandidate`'s
+  Risk-Manager fields and no longer matched the dataclass) and live
+  against real Alpaca data, both producing correct APPROVE/REJECT
+  batches end to end. See `NEXTSTEPS.md`'s matching entry.
+- **"Stale REJECT reason" note checked, no change needed, 2026-08-31**:
+  `NEXTSTEPS.md` flagged the premium-side REJECT reason string's "pooled
+  leftover $X" wording as possibly stale after the concentration-cap
+  removal. Traced it by hand before editing anything: the confusing
+  example (`"pooled leftover $95,000"` identical across three different
+  rejections, in `logs/cache/risk-decisions-2026-08-31-manual.txt`) is a
+  frozen artifact from *before* the cap removal — the string reported the
+  raw uncapped leftover while the real decision used the capped amount,
+  which really was misleading back then. On the real post-fix run
+  (`logs/cache/risk-decisions-2026-08-31.json`), hand-tracing the pool
+  (target share $31,667 → TSLA consumes part of it on retry → META
+  correctly rejected against the true remaining $28,000) confirms the
+  string is accurate as-is. No code change made; the frozen `-manual.txt`
+  log is left untouched as a historical record.
 
 ## Component 1: Strategy Engine — ✅ DONE, tested
 

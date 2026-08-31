@@ -118,17 +118,51 @@ live rejecting every premium-selling candidate on a real run — see
 is now spec-literal on §8 (equal split + pool leftover, no per-name
 ceiling).
 
-## Next up
+## Done: ranking-consistency gap closed, 2026-08-31
 
-- **Ranking-consistency gap between the two strategy sides** — surfaced
-  during today's live run: the Analyst-driven directional selection and
-  Risk Manager's own internal premium-side re-ranking are two
-  independently-timed fetches, so the same ticker can appear as a
-  candidate on both sides across a few minutes of live 0DTE drift.
-  Didn't cause a double-order today only because the premium side
-  happened to reject that ticker anyway on cost. Worth hardening (one
-  shared ranking snapshot for both sides) before running unattended
-  without a human reviewing each step.
+Surfaced during that day's live run: the Analyst-driven directional
+selection and Risk Manager's own internal premium-side re-ranking were two
+independently-timed fetches, so the same ticker could appear as a
+candidate on both sides across a few minutes of live 0DTE drift. Didn't
+cause a double-order that day only because the premium side happened to
+reject that ticker anyway on cost. Fixed by making `strategy_engine.py`
+the single fetch for the whole run: it gained a `--json` CLI mode
+(`{universe, expiration_used, ranked, skipped, premium_sell,
+directional}`, matching the shape `scripts/save_mock_fixture.py` already
+wrote to `mock_cache/<date>/strategy_ranking.json`) whose output the
+morning-decision prompt now caches to
+`logs/cache/ranking-<date>.json`; `risk_manager.py`'s CLI no longer
+calls `strategy_engine.rank_universe()` itself — it loads that cached
+file instead (`risk_manager.py <ranking_result.json>
+<selection_result.json>`, replacing the old `<expiration>` positional
+arg). `evaluate()` and the rest of the Risk Manager's logic are
+unchanged — this only touched the two CLIs and
+`prompts/morning_decision.md`'s steps 2/6/7. Verified: all 42 unit tests
+still pass (the CLI/`__main__` blocks were never unit-tested, same
+convention as before); ran the new chain both offline against
+`mock_cache/2026-08-28/` (had to regenerate that fixture via
+`save_mock_fixture.py` first — it predated `RankedCandidate`'s
+Risk-Manager-sizing fields and no longer matched the dataclass) and live
+against real Alpaca data, both producing correct APPROVE/REJECT batches
+end to end.
+
+## Verified, no change needed: the "stale REJECT reason" note
+
+Traced this before touching any code. The confusing example
+(`"pooled leftover $95,000"` identical across three different
+rejections, in `logs/cache/risk-decisions-2026-08-31-manual.txt`) is a
+frozen artifact from **before** the concentration-cap removal — back
+then the string reported the raw uncapped leftover while the actual
+decision used the capped amount, which really was misleading. Hand-
+traced the numbers on the real post-fix run
+(`logs/cache/risk-decisions-2026-08-31.json`: target share $31,667 →
+TSLA consumes part of the pool on retry → META correctly rejected
+against the true remaining $28,000) and the reason string is accurate
+as-is. No code change made; the frozen `-manual.txt` log is left
+untouched as a historical record rather than "fixed" to match current
+behavior.
+
+## Next up
 - **Verify tomorrow's cron fires cleanly end-to-end unattended** — today's
   actual trades were placed manually (user explicitly chose to skip
   straight to the full pipeline once the greeks fix landed, rather than
@@ -169,8 +203,3 @@ ceiling).
   `feed=iex` required explicitly, SIP 403's on this account) but didn't
   measure the lag itself. Do this before tightening the 9:41 trigger
   buffer.
-- **Fix the REJECT reason string's stale wording** — minor: when a
-  premium-selling candidate is rejected, the message still says "pooled
-  leftover $X" — harmless now that there's no cap distorting that number,
-  but worth double-checking the wording reads correctly given the cap
-  removal.

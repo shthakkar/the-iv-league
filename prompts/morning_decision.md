@@ -38,11 +38,17 @@ does after you're done**:
    `is_open: false`, write one line to
    `logs/<YYYY-MM-DD>-morning-decision.md` saying so and stop — do nothing
    else.
-2. Run `./venv/bin/python3 strategy_engine.py` — the real production run,
-   no `EXPIRATION_OVERRIDE`, no `UNIVERSE_OVERRIDE` (full 8-ticker spec
+2. Run `./venv/bin/python3 strategy_engine.py --json >
+   logs/cache/ranking-<YYYY-MM-DD>.json` — the real production run, no
+   `EXPIRATION_OVERRIDE`, no `UNIVERSE_OVERRIDE` (full 8-ticker spec
    universe: SPY QQQ NVDA TSLA AAPL AMZN MSFT META) — to rank by IV skew
    and split into the top-3 premium-selling candidates and the remaining
-   directional candidates.
+   directional candidates. **This is the only ranking fetch for the whole
+   run** — step 6's Risk Manager call reads this same cached file rather
+   than re-fetching live, so both sides of today's decision see one
+   consistent snapshot instead of two independently-timed reads of
+   fast-moving 0DTE IV (see PROGRESS.md's "Ranking-consistency gap" entry
+   for why that mattered).
 3. For each directional candidate, dispatch the `analyst` subagent
    (`subagent_type: "analyst"`, one ticker per call) — all of them in
    parallel, in a single message with multiple Agent tool calls.
@@ -59,15 +65,21 @@ does after you're done**:
    spec §14 selection rule — deterministic code, not something to apply
    yourself. Don't hand-derive the selected list; use the script's output
    as-is.
-6. Run `./venv/bin/python3 risk_manager.py <today's date, YYYY-MM-DD>
+6. Run `./venv/bin/python3 risk_manager.py
+   logs/cache/ranking-<YYYY-MM-DD>.json
    logs/cache/selection-result-<YYYY-MM-DD>.json --json` and save its
    stdout to `logs/cache/risk-decisions-<YYYY-MM-DD>.json`. This is Risk
-   Manager's real APPROVE/REJECT batch — real account balance, real
-   option chain, real sizing. Don't hand-derive it either.
+   Manager's real APPROVE/REJECT batch — real account balance, the same
+   option-chain ranking step 2 already fetched (not re-fetched), real
+   sizing. Don't hand-derive it either.
 7. Write exactly one new file, `logs/<YYYY-MM-DD>-morning-decision.md`,
    containing:
    - Run timestamp (ET and local)
-   - The full 8-ticker IV-skew ranking table
+   - The full 8-ticker IV-skew ranking table, rendered from step 2's
+     `logs/cache/ranking-<YYYY-MM-DD>.json` (its `ranked`/`skipped` lists
+     have every column the human-readable table would — ticker, spot,
+     atm_strike, atm_iv, put_15d_strike, put_15d_delta, put_15d_iv,
+     iv_skew) — transcription, not a second run of the script
    - Every directional candidate's full Analyst output (all 5, not just
      the selected ones)
    - Which ≤3 were selected (from step 5's actual output) and a one-line
@@ -85,5 +97,5 @@ does after you're done**:
    Manager's approved count on each side), nothing more (this is what
    shows up in the trigger's run log/notification).
 
-Do not modify any file other than the new file under `logs/` and the three
+Do not modify any file other than the new file under `logs/` and the four
 cache files under `logs/cache/` named above.

@@ -223,12 +223,40 @@ def _print_table(ranked: list[RankedCandidate], skipped: list[SkippedTicker]) ->
 
 
 if __name__ == "__main__":
+    # --json: machine-readable ranking snapshot, same shape
+    # scripts/save_mock_fixture.py already writes to
+    # mock_cache/<date>/strategy_ranking.json. Meant to be captured to a
+    # cache file ONCE per run (e.g. logs/cache/ranking-<date>.json) and fed
+    # to both the Analyst-dispatch/directional-selection step and
+    # risk_manager.py's ranking_result argument, instead of each side re-fetching
+    # live minutes apart -- see PROGRESS.md's "Ranking-consistency gap"
+    # entry for why a second independently-timed fetch is a real problem
+    # (0DTE IV skew moves fast enough that the top-3 split can shift
+    # between two fetches a few minutes apart).
+    import argparse
+    import dataclasses
+    import json
+
+    parser = argparse.ArgumentParser(description="Strategy Engine -- IV-skew ranking for the 0DTE universe.")
+    parser.add_argument("--json", action="store_true", help="Machine-readable JSON instead of the human-readable table")
+    args = parser.parse_args()
+
     expiration = config.EXPIRATION_OVERRIDE or _today_expiration()
-    print(f"Ranking {config.UNIVERSE} for expiration {expiration}...\n")
-
     ranked, skipped = rank_universe()
-    _print_table(ranked, skipped)
-
     premium_sell, directional = split_candidates(ranked)
-    print(f"\nPremium-selling candidates (top {config.PREMIUM_SELL_COUNT}): {[c.ticker for c in premium_sell]}")
-    print(f"Directional candidates (rest): {[c.ticker for c in directional]}")
+
+    if args.json:
+        payload = {
+            "universe": config.UNIVERSE,
+            "expiration_used": expiration,
+            "ranked": [dataclasses.asdict(c) for c in ranked],
+            "skipped": [dataclasses.asdict(s) for s in skipped],
+            "premium_sell": [c.ticker for c in premium_sell],
+            "directional": [c.ticker for c in directional],
+        }
+        print(json.dumps(payload, indent=2))
+    else:
+        print(f"Ranking {config.UNIVERSE} for expiration {expiration}...\n")
+        _print_table(ranked, skipped)
+        print(f"\nPremium-selling candidates (top {config.PREMIUM_SELL_COUNT}): {[c.ticker for c in premium_sell]}")
+        print(f"Directional candidates (rest): {[c.ticker for c in directional]}")

@@ -335,13 +335,25 @@ def _print_decisions(label: str, decisions: list[Decision]) -> None:
 
 
 if __name__ == "__main__":
-    # Usage: risk_manager.py <expiration YYYY-MM-DD> <selection_result.json> [--json]
+    # Usage: risk_manager.py <ranking_result.json> <selection_result.json> [--json]
+    #   ranking_result.json: strategy_engine.py --json's stdout (same shape
+    #     scripts/save_mock_fixture.py writes to
+    #     mock_cache/<date>/strategy_ranking.json -- that fixture works here
+    #     directly for offline testing). Loaded, not re-fetched: this used to
+    #     call strategy_engine.rank_universe() itself, a SECOND independent
+    #     live chain fetch minutes after the one the morning-decision prompt
+    #     already did for Analyst dispatch/directional selection -- 0DTE IV
+    #     skew moves fast enough that the two fetches could disagree on the
+    #     premium-selling/directional split (surfaced live 2026-08-31, see
+    #     PROGRESS.md's "Ranking-consistency gap" entry). Now both sides of
+    #     one run consume the exact same ranking snapshot.
     #   selection_result.json: directional_selection.py's stdout, i.e. a file
-    #   containing {"selected": [...], ...}. No default/fallback path here on
-    #   purpose -- an automated run must pass today's real selection result,
-    #   never silently fall back to a stale fixture. For manual testing
-    #   against the frozen real morning, pass mock_cache/2026-08-28/
-    #   selection_result.json explicitly.
+    #     containing {"selected": [...], ...}. No default/fallback path here
+    #     on purpose -- an automated run must pass today's real selection
+    #     result, never silently fall back to a stale fixture. For manual
+    #     testing against the frozen real morning, pass
+    #     mock_cache/2026-08-28/{strategy_ranking,selection_result}.json
+    #     explicitly.
     import argparse
     import dataclasses
     import json
@@ -349,12 +361,16 @@ if __name__ == "__main__":
     import strategy_engine as se
 
     parser = argparse.ArgumentParser(description="Risk Manager -- APPROVE/REJECT batch for one day's candidates.")
-    parser.add_argument("expiration", help="0DTE expiration date, YYYY-MM-DD")
+    parser.add_argument("ranking_result", help="Path to strategy_engine.py --json's JSON output")
     parser.add_argument("selection_result", help="Path to directional_selection.py's JSON output")
     parser.add_argument("--json", action="store_true", help="Machine-readable JSON instead of the human-readable table")
     args = parser.parse_args()
 
-    ranked, skipped = se.rank_universe(expiration=args.expiration)
+    with open(args.ranking_result) as f:
+        ranking_payload = json.load(f)
+    ranked = [se.RankedCandidate(**c) for c in ranking_payload["ranked"]]
+    skipped = [se.SkippedTicker(**s) for s in ranking_payload["skipped"]]
+    expiration_used = ranking_payload["expiration_used"]
     premium_ranked, directional_ranked = se.split_candidates(ranked)
     ranked_lookup = {c.ticker: c for c in ranked}
 
@@ -366,7 +382,7 @@ if __name__ == "__main__":
     if args.json:
         print(json.dumps(dataclasses.asdict(result), indent=2))
     else:
-        print(f"Ranking {config.UNIVERSE} for expiration {args.expiration}...")
+        print(f"Ranking {config.UNIVERSE} for expiration {expiration_used}...")
         print(f"Premium-selling candidates: {[c.ticker for c in premium_ranked]}")
         print(f"Directional candidates: {[c.ticker for c in directional_ranked]}")
         if skipped:
