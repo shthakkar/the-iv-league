@@ -366,11 +366,24 @@ def run(risk_decisions_path: str) -> None:
         for d in data["directional_decisions"] if d["approved"]
     ]
 
+    print(f"[{datetime.datetime.now(config.ET).isoformat()}] Opened "
+          f"{len(premium_positions)} premium + {len(directional_positions)} "
+          f"directional position(s). Monitoring...", flush=True)
+
     while premium_positions or directional_positions:
         premium_positions = [p for p in premium_positions if not tick_premium_position(p)]
         directional_positions = [p for p in directional_positions if not tick_directional_position(p)]
+        # Heartbeat for manual monitoring (stdout, captured by
+        # run_morning_trigger.sh into logs/<date>-execution-run.out) --
+        # entries/exits themselves are logged separately by log_entry/
+        # log_exit into logs/<date>-execution.log.
+        print(f"[{datetime.datetime.now(config.ET).isoformat()}] "
+              f"{len(premium_positions)} premium + {len(directional_positions)} "
+              f"directional position(s) still open.", flush=True)
         if premium_positions or directional_positions:
             time.sleep(config.MONITOR_POLL_SECS)
+
+    print(f"[{datetime.datetime.now(config.ET).isoformat()}] All positions closed. Exiting.", flush=True)
 
 
 if __name__ == "__main__":
