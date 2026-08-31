@@ -63,6 +63,24 @@ ATM IV = (ATM Call IV + ATM Put IV) / 2
 
 **15Δ Put** = the put whose absolute delta is closest to 0.15.
 
+**Changed 2026-08-31**: Alpaca's own option-snapshot delta/IV fields are
+**never populated for 0DTE contracts** — confirmed via their Market Data
+FAQ (a literal division-by-zero in their Black-Scholes calc at T=0) and
+empirically (20/20 identical near-ATM liquid SPY strikes had greeks at
+1DTE, 0/20 had them at 0DTE, checked the same moment). Not a feed/
+subscription gap — structural, every live trading day, for exactly the
+0DTE contracts this spec requires. Fixed by computing delta/IV locally
+(`black_scholes.py`) whenever Alpaca's own fields are null: standard
+Black-Scholes, inverted via Newton-Raphson (falling back to bisection) off
+the contract's own mid quote, using real hours-remaining-to-close as T
+(never literal zero). Researched before building (see PROGRESS.md): this
+is standard practice for near-zero-but-nonzero T, not a workaround of
+questionable soundness — real caveats exist as T→0 (vega collapse, whippy
+delta/gamma in the final 30-60 min) but concentrate in deep OTM/ITM
+strikes, not the ATM/~15Δ region this spec actually targets. First proved
+against real 0DTE market data live, then used for the system's actual
+first live trades the same day.
+
 ## 5. Premium-Selling Ranking
 
 ```

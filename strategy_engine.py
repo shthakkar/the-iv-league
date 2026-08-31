@@ -18,6 +18,7 @@ from alpaca.data.historical.option import OptionHistoricalDataClient
 from alpaca.data.historical.stock import StockHistoricalDataClient
 from alpaca.data.requests import OptionChainRequest, StockLatestTradeRequest
 
+import black_scholes as bs
 import config
 
 _stock_client = StockHistoricalDataClient(config.API_KEY, config.API_SECRET)
@@ -63,12 +64,39 @@ def _parse_occ_symbol(symbol: str) -> tuple[float, str]:
     return strike, right
 
 
+def _local_greeks(spot: float, strike: float, right: str, bid: float, ask: float,
+                   expiration: str) -> tuple[float, float] | None:
+    """Fallback when Alpaca's own greeks/IV are missing -- true for every 0DTE
+    contract (Alpaca computes greeks via Black-Scholes with a literal T=0 for
+    same-day expirations, a division-by-zero on their end; confirmed via their
+    own Market Data FAQ and empirically, see black_scholes.py's module
+    docstring and PROGRESS.md). Solves IV from the quote's own mid price using
+    real hours-remaining-to-close as T, then derives delta from that IV.
+    Returns None if there's no usable quote or no plausible solve -- caller
+    treats that exactly like Alpaca returning nulls (skip this strike)."""
+    if bid <= 0 or ask <= 0:
+        return None
+    mid = (bid + ask) / 2
+    exp_date = datetime.date.fromisoformat(expiration)
+    now = datetime.datetime.now(config.ET)
+    T = bs.time_to_expiration_years(now, exp_date)
+    iv = bs.implied_volatility(mid, spot, strike, T, config.RISK_FREE_RATE, right)
+    if iv is None:
+        return None
+    delta = bs.bs_delta(spot, strike, T, config.RISK_FREE_RATE, iv, right)
+    return delta, iv
+
+
 def _fetch_liquid_chain(ticker: str, spot: float, expiration: str) -> tuple[dict, dict]:
     """Return (calls, puts) dicts of {strike: (delta, iv, symbol, bid, ask)}, liquid
-    contracts only (i.e. Alpaca returned a computed delta and IV — thin/no-interest
-    strikes come back null and are dropped, matching what the spike found). bid/ask
-    come from the same snapshot/same call — Risk Manager's sizing inputs (credit
-    received, premium to pay) piggyback on this fetch rather than re-fetching."""
+    contracts only. Prefers Alpaca's own computed delta/IV when present (works
+    fine for any non-0DTE expiration); falls back to a local Black-Scholes solve
+    (_local_greeks) when they're null -- true for every 0DTE contract, which is
+    what this project actually trades. Either way, a strike with no usable
+    delta/IV (thin/no-interest, or a solve that isn't plausible) is dropped, not
+    forced. bid/ask come from the same snapshot/same call — Risk Manager's
+    sizing inputs (credit received, premium to pay) piggyback on this fetch
+    rather than re-fetching."""
     req = OptionChainRequest(
         underlying_symbol=ticker,
         expiration_date=expiration,
@@ -79,14 +107,19 @@ def _fetch_liquid_chain(ticker: str, spot: float, expiration: str) -> tuple[dict
 
     calls, puts = {}, {}
     for symbol, snapshot in chain.items():
-        delta = getattr(snapshot.greeks, "delta", None)
-        iv = getattr(snapshot, "implied_volatility", None)
-        if delta is None or iv is None:
-            continue
+        strike, right = _parse_occ_symbol(symbol)
         quote = snapshot.latest_quote
         bid = getattr(quote, "bid_price", None) or 0.0
         ask = getattr(quote, "ask_price", None) or 0.0
-        strike, right = _parse_occ_symbol(symbol)
+
+        delta = getattr(snapshot.greeks, "delta", None)
+        iv = getattr(snapshot, "implied_volatility", None)
+        if delta is None or iv is None:
+            local = _local_greeks(spot, strike, right, bid, ask, expiration)
+            if local is None:
+                continue
+            delta, iv = local
+
         bucket = calls if right == "C" else puts
         bucket[strike] = (delta, iv, symbol, bid, ask)
     return calls, puts
