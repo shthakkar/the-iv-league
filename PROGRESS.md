@@ -598,6 +598,108 @@ happened to reject that ticker anyway. Worth hardening (a single ranking
 snapshot shared by both sides) before this runs unattended without a
 human reviewing each step.
 
+## Component 7: Strategist Agent + HITL review — ✅ DONE, validated live, first review cycle complete, 2026-08-31
+
+Files: `.claude/agents/strategist.md`, `STRATEGY_CHANGELOG.md`.
+
+**Design pivots during brainstorming** (spec §24-27 as originally written
+assumes a numeric-parameter-tuning Strategist and a formal
+review-surface + Backtest → Compare → Paper → Risk Approval → Production
+pipeline; both were deliberately simplified for V1 with only one day of
+data):
+- **Scope for n=1 trading day**: post-mortem + qualitative process-fix
+  proposals only. Explicitly forbidden from proposing numeric parameter
+  tuning (e.g. "15Δ → 10Δ") from a single day's sample — no statistical
+  basis for that yet.
+- **HITL interface**: considered a published Artifact with comments, then a
+  local HTML review page + tiny stdlib server (Claude-agnostic, diff
+  auto-applied via a headless `claude -p` "Implementor" agent on approval)
+  — both dropped in favor of plain interactive review in a Claude Code
+  session. Simpler, and matches how the rest of this project already gets
+  built; no new always-on process, no separate Implementor agent needed
+  since the interactive session just implements approved changes directly.
+- **Post-mortem structure**: leads with "what went well" / "what could be
+  better" (both evidence-cited, no generic claims), then an
+  inputs-completeness audit (did the day's Analyst/Risk Manager actually
+  use everything spec §5/§12 call for?), then a **live** end-of-day
+  re-check — real `get_news` + hourly `get_stock_bars` for traded tickers
+  only, comparing against what was known at the 9:40 ET decision point,
+  specifically hunting for anything that emerged later that would explain
+  a losing trade. Proposals come last, after all of that.
+
+**Validated live, twice**, dispatched via the Agent tool
+(`subagent_type: "strategist"`) against real 2026-08-31 trade data (the
+first live trading day's 3 closed trades, net -$3,927). Second run added
+hourly bars to the EOD check per request. Both runs correctly joined
+`logs/<date>-execution.log` + `logs/cache/risk-decisions-<date>.json` +
+`logs/cache/analyst-candidates-<date>.json` + `logs/cache/selection-
+result-<date>.json`, and the second run's live EOD check correctly
+explained the losing SPY trade (bearish thesis stalled almost exactly as
+the Analyst's own risk list warned, later news was a wash — Hormuz
+headlines vs. Goldman's Solomon calling the consumer "resilient").
+
+**First real review cycle, same day** — all 5 Strategist proposals +
+1 human-suggested change reviewed interactively in chat, approved, then
+implemented via 3 parallel `general-purpose` agents on disjoint files
+(no worktree isolation needed — zero file overlap by design), each
+following TDD, none committing (human reviewed diffs and committed
+after):
+
+- **Proposal 1** (persist the IV-skew ranking snapshot): `strategy_engine.
+  py`'s `--json` mode now also persists to `logs/cache/ranking-
+  <expiration>.json`, gains a `run_id`.
+- **Proposal 5** (log greeks-feed source): `RankedCandidate`/`SkippedTicker`
+  gain `greeks_source` (`alpaca` | `black_scholes_fallback` |
+  `unavailable`), logged per ticker to stderr.
+- **Proposal 3** (partition inconsistency) — **traced to a real, confirmed
+  bug**, not just a process gap: `build_directional_candidates()` resolved
+  selected tickers against the FULL ranked lookup (undiscriminated between
+  premium/directional sides), so a stale `selection_result.json` could
+  silently pull in a ticker that had since shifted to the premium side of
+  a later ranking run — exactly what happened live 2026-08-31 (META and
+  AAPL ended up in both `premium_decisions` and `directional_decisions`).
+  Fixed: now scoped to the directional-side lookup only; a mismatch is an
+  explicit REJECT naming the mismatch, never a silent leak.
+- **Proposal 4** (AAPL TP-price "anomaly") — **investigated and confirmed
+  NOT a bug**: `build_premium_position` already derives TP from the real
+  fill (0.27 × 0.5 = 0.135), not Risk Manager's pre-trade estimate (0.09,
+  a different number, in `risk-decisions.json`) — a distinction this
+  project corrected once before (Component 6). The logged exit (0.16) vs.
+  the real threshold (0.135) is ordinary bid/ask slippage on the
+  market-order close. The actual gap: nothing logged the threshold really
+  armed, so an audit (including the Strategist's own first pass) ends up
+  comparing against the wrong number. Fixed the legibility gap: premium
+  `ENTRY` log lines now include the real `tp=`/`sl=` from the actual fill.
+- **Proposal 2** (run provenance) — split across two files: `risk_manager.
+  py`'s `RiskManagerResult` gains `generated_at`; `execution_agent.py`
+  logs which decisions file (path + `generated_at`) it loaded at startup.
+  Closes a real gap: today it took manual cross-referencing of exact
+  contract symbols/quantities across 3 different same-day decision-file
+  versions to determine which one was actually traded.
+- **Human suggestion** (not from the Strategist Agent): directional
+  capital allocation changed from a flat 5% of balance to **1% per
+  selected directional candidate, capped at 3% total** — a single-name day
+  (like 2026-08-31's actual SPY-only pick) was risking the same dollar
+  amount as a full 3-name day. `config.DIRECTIONAL_ALLOCATION_PCT` →
+  `DIRECTIONAL_PCT_PER_STOCK` (0.01) + `DIRECTIONAL_MAX_PCT` (0.03);
+  `compute_budgets()` now takes `num_directional_selected`. On a $100k
+  account, today's actual case (1 selected) would have sized at $1,000
+  instead of $5,000.
+
+4 commits (`5af31c2`, `a1a3f99`, `b8d6633`, `fe02c1e`), 65/65 tests passing
+across the full suite after all four. Full before/after table and AI-vs-
+human attribution recorded in `STRATEGY_CHANGELOG.md`, which
+`strategist.md` now reads as an input on every run so it doesn't
+re-propose something already decided.
+
+**Not built in this cycle**: spec §26-27's formal Backtest → Compare
+against V1 → Paper Trading → Risk Approval → Production pipeline — an
+approved change here goes straight into what cron runs tomorrow, no
+separate backtest/paper-trading stage. Accepted trade-off for V1 (paper
+account only, human reviews every proposal interactively before
+anything's implemented) — revisit if this ever needs to run with less
+human oversight per cycle.
+
 ## Dashboard — 🟡 SCAFFOLDED, sample data only, 2026-08-30
 
 Files: `dashboard/index.html`, `dashboard/data.json`, `dashboard/README.md`.

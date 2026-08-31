@@ -171,14 +171,23 @@ behavior.
   but the full unattended path — cron fires primary, decision run
   completes, execution hands off automatically, no manual step — hasn't
   been watched end-to-end yet.
-- **Strategist Agent + HITL Review gate** (spec §24-27) — the "no trade
-  history to analyze" blocker is gone as of today (3 real closed trades),
-  but the user explicitly said hold off for now. Pick up once there's
-  more than one day's worth of outcomes, or whenever asked. HITL itself
-  has no code to build (manual review step by design), but the handoff
-  contract (what the Strategist hands the reviewer, what
-  "approve"/"reject" writes back) needs designing alongside the
-  Strategist Agent.
+- ~~**Strategist Agent + HITL Review gate**~~ — **Done, 2026-08-31.** Built
+  as a `strategist` subagent (`.claude/agents/strategist.md`), validated
+  live twice against real 2026-08-31 trade data. HITL review happens
+  interactively in a Claude Code session (not a web page/local server, not
+  a separate headless Implementor agent — dropped both during design in
+  favor of just implementing approved changes directly in-session) — this
+  deviates from spec §26-27's more formal Backtest → Compare → Paper →
+  Risk Approval → Production pipeline, none of which exists; see
+  `STRATEGY_CHANGELOG.md` for why that's an accepted trade-off for now.
+  First real review cycle done same day: all 5 of the Strategist's
+  proposals + 1 human-suggested change (directional allocation: flat 5% →
+  1% per selected stock capped at 3%) implemented via 3 parallel agents on
+  disjoint files, TDD, 65/65 tests passing, 4 commits. Full before/after
+  and AI-vs-human attribution tracked in `STRATEGY_CHANGELOG.md`, which
+  the Strategist Agent itself now reads on every run so it doesn't
+  re-propose already-decided things. See PROGRESS.md's Component 7 entry
+  for the full writeup.
 - **Dashboard** (spec §29) — the page itself is done:
   `dashboard/index.html` + `dashboard/data.json` (sample) +
   `dashboard/README.md` (schema). No longer blocked on "no real trade
