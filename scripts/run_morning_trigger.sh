@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 # Fired by launchd on weekday mornings (~9:41 AM ET). Headless, decision-only
 # — see prompts/morning_decision.md for exactly what this does and does not
-# do (no order placement; Components 2/4/5/6 aren't built yet).
+# do (no order placement; Component 6, Execution Agent, isn't built yet).
+# Risk Manager (Component 5) runs as a plain subprocess via Bash -- it talks
+# to the Trading API through the raw SDK, not the MCP server, so no new
+# ALLOWED tool is needed for it here.
 #
 # Tool access is allowlisted rather than run with
 # --dangerously-skip-permissions, so an unattended run can't place, cancel,

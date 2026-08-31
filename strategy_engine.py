@@ -33,10 +33,15 @@ class RankedCandidate:
     atm_call_iv: float
     atm_put_iv: float
     atm_iv: float
+    atm_call_symbol: str
+    atm_call_ask: float
+    atm_put_symbol: str
+    atm_put_ask: float
     put_15d_symbol: str
     put_15d_strike: float
     put_15d_delta: float
     put_15d_iv: float
+    put_15d_bid: float  # credit received selling this put -- Risk Manager's CSP sizing input
     iv_skew: float  # 15d put IV - ATM IV, in decimal (0.01 = 1 pct pt)
 
 
@@ -59,9 +64,11 @@ def _parse_occ_symbol(symbol: str) -> tuple[float, str]:
 
 
 def _fetch_liquid_chain(ticker: str, spot: float, expiration: str) -> tuple[dict, dict]:
-    """Return (calls, puts) dicts of {strike: (delta, iv, symbol)}, liquid contracts only
-    (i.e. Alpaca returned a computed delta and IV — thin/no-interest strikes come back
-    null and are dropped, matching what the spike found)."""
+    """Return (calls, puts) dicts of {strike: (delta, iv, symbol, bid, ask)}, liquid
+    contracts only (i.e. Alpaca returned a computed delta and IV — thin/no-interest
+    strikes come back null and are dropped, matching what the spike found). bid/ask
+    come from the same snapshot/same call — Risk Manager's sizing inputs (credit
+    received, premium to pay) piggyback on this fetch rather than re-fetching."""
     req = OptionChainRequest(
         underlying_symbol=ticker,
         expiration_date=expiration,
@@ -76,9 +83,12 @@ def _fetch_liquid_chain(ticker: str, spot: float, expiration: str) -> tuple[dict
         iv = getattr(snapshot, "implied_volatility", None)
         if delta is None or iv is None:
             continue
+        quote = snapshot.latest_quote
+        bid = getattr(quote, "bid_price", None) or 0.0
+        ask = getattr(quote, "ask_price", None) or 0.0
         strike, right = _parse_occ_symbol(symbol)
         bucket = calls if right == "C" else puts
-        bucket[strike] = (delta, iv, symbol)
+        bucket[strike] = (delta, iv, symbol, bid, ask)
     return calls, puts
 
 
@@ -108,13 +118,13 @@ def rank_ticker(ticker: str, expiration: str) -> RankedCandidate | SkippedTicker
     if not common_strikes:
         return SkippedTicker(ticker, "no strike with both liquid call and put for ATM IV")
     atm_strike = min(common_strikes, key=lambda k: abs(k - spot))
-    atm_call_iv = calls[atm_strike][1]
-    atm_put_iv = puts[atm_strike][1]
+    _, atm_call_iv, atm_call_symbol, _, atm_call_ask = calls[atm_strike]
+    _, atm_put_iv, atm_put_symbol, _, atm_put_ask = puts[atm_strike]
     atm_iv = (atm_call_iv + atm_put_iv) / 2
 
     # 15-delta put: closest |delta| to TARGET_PUT_DELTA among liquid puts.
     put_15d_strike = min(puts, key=lambda k: abs(abs(puts[k][0]) - config.TARGET_PUT_DELTA))
-    put_15d_delta, put_15d_iv, put_15d_symbol = puts[put_15d_strike]
+    put_15d_delta, put_15d_iv, put_15d_symbol, put_15d_bid, _ = puts[put_15d_strike]
 
     return RankedCandidate(
         ticker=ticker,
@@ -124,10 +134,15 @@ def rank_ticker(ticker: str, expiration: str) -> RankedCandidate | SkippedTicker
         atm_call_iv=atm_call_iv,
         atm_put_iv=atm_put_iv,
         atm_iv=atm_iv,
+        atm_call_symbol=atm_call_symbol,
+        atm_call_ask=atm_call_ask,
+        atm_put_symbol=atm_put_symbol,
+        atm_put_ask=atm_put_ask,
         put_15d_symbol=put_15d_symbol,
         put_15d_strike=put_15d_strike,
         put_15d_delta=put_15d_delta,
         put_15d_iv=put_15d_iv,
+        put_15d_bid=put_15d_bid,
         iv_skew=put_15d_iv - atm_iv,
     )
 

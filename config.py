@@ -65,3 +65,26 @@ MAX_DIRECTIONAL_SELECTED = 3
 # exists for a ticker). Overridable here for testing when markets are
 # closed or a same-day expiration isn't available — see strategy_engine.py.
 EXPIRATION_OVERRIDE = os.environ.get("EXPIRATION_OVERRIDE", "")
+
+# ---------- RISK MANAGER / CAPITAL ALLOCATION ----------
+# Spec section 7's 95%/5% split, applied dynamically to the account's real
+# options_buying_power (not the historical spec's hardcoded $100k account) —
+# decided 2026-08-30, see PROGRESS.md's Risk Manager entry for why
+# options_buying_power specifically (margin doesn't extend to options on
+# this account, confirmed via Alpaca's account-field docs).
+PREMIUM_SELL_ALLOCATION_PCT = 0.95
+DIRECTIONAL_ALLOCATION_PCT = 0.05
+
+# Spec section 23 hard limits. Max daily loss is deliberately NOT here —
+# dropped for V1, see PROGRESS.md (its "halt new positions" behavior is
+# inert with no position recycling this version).
+# Max total open positions across both strategies (3 premium + up to 3
+# directional under current PREMIUM_SELL_COUNT/MAX_DIRECTIONAL_SELECTED).
+MAX_POSITIONS = 6
+
+# Max capital committed to any single underlying, as a fraction of the
+# available balance — prevents concentration if a name's sizing would
+# otherwise dominate the budget (spec section 23). 0.35 sits just above the
+# natural ~1/3 three-way premium-selling split so it doesn't bind in the
+# common case, only when something unusual would concentrate exposure.
+MAX_EXPOSURE_PER_UNDERLYING_PCT = 0.35

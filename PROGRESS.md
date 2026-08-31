@@ -41,6 +41,33 @@ plan — see git log for the granular history.
   Analyst's no-execution-authority rule (§12): the Strategist can *propose*,
   never advance its own proposal. Decided 2026-08-30, before either the
   Strategist or the gate itself is built — see Component 6 below.
+- **Premium-selling switched from defined-risk credit spread to plain
+  cash-secured put (CSP)**: changed spec §6, decided 2026-08-30 while
+  designing the Risk Manager, before any of it is built. No protective
+  leg — buying power required per contract is now the full strike × 100
+  (was just the spread width), so far fewer contracts fit the same
+  per-name budget (checked against the real NVDA/AMZN/AAPL run below: 1
+  contract each at the $31,667 target, ~83% budget utilization, no room
+  to size up). Knowingly accepted trade-off: risk is now uncapped below
+  the strike instead of structurally floored by a protective put —
+  material because Alpaca has **no broker-side stop-loss for options**
+  (checked their OrderClass API spec: `bracket`/`oco`/`oto` order classes
+  are equity-only; options only support `simple`/`mleg`), so the §9 3×
+  stop-loss is enforced entirely by the Execution Agent's own polling
+  loop with nothing backstopping a gap or a lagging loop. `SPREAD_WIDTH`
+  config constant and the protective-put fetch step are dropped from the
+  Risk Manager design as a result.
+- **Daily loss limit (spec §23) dropped for V1**: decided 2026-08-30. Its
+  "once hit, no new positions" phrasing is a circuit breaker for a
+  *second wave* of trades after an early loss — but V1 never has one
+  (position recycling is deferred, directional only fires once at 9:40
+  AM), so there's nothing later in the day for it to ever block. Not
+  reintroducing it as a pre-trade sizing cap either, since that would
+  directly conflict with §8's ~$31,667/name allocation target (a
+  pre-trade worst-case-loss reservation would shrink premium-side
+  positions by an order of magnitude versus what §8 describes). Revisit
+  once position recycling exists and a real second wave of trades is
+  possible. `MAX_DAILY_LOSS_PCT` is not going into `risk_manager.py`.
 
 ## Component 1: Strategy Engine — ✅ DONE, tested
 
@@ -185,6 +212,60 @@ the Analyst/news pieces are captured by hand from a real run only (spec
 directional cap (§16), and the Risk Manager approve/reject step (§22) —
 this component only covers the selection step, not the trade itself.
 
+## Component 5: Risk Manager — ✅ DONE, tested (unit + live)
+
+Files: `risk_manager.py`, `tests/test_risk_manager.py`. Config additions:
+`PREMIUM_SELL_ALLOCATION_PCT` (0.95), `DIRECTIONAL_ALLOCATION_PCT` (0.05),
+`MAX_POSITIONS` (6), `MAX_EXPOSURE_PER_UNDERLYING_PCT` (0.35) — the latter
+two not spec-fixed, same "documented default, revisit with real trade
+history" status as `MIN_DIRECTIONAL_CONFIDENCE`.
+
+Covers both strategy sides (spec §22), built TDD (17 unit tests,
+`tests/test_risk_manager.py`, stdlib `unittest` — no new dependency):
+
+- `get_account_snapshot()` / `compute_budgets()`: one live `TradingClient.
+  get_account()` call per batch, budgets = 95%/5% of `options_buying_power`
+  (falls back to `cash`) — dynamic replacement for the spec's hardcoded
+  $100k account. See the "Architecture decisions made" section above for
+  why `options_buying_power` specifically, the CSP-over-spread switch, and
+  why max daily loss was dropped.
+- `allocate_premium_positions()`: CSP sizing (`strike × 100` per contract)
+  across a shared budget pool, two passes — equal target share per
+  candidate first, then pools whatever's left (unused shares +
+  couldn't-afford-even-one shares) and retries anyone who missed their own
+  share against that pool. REJECTs (never forces, per spec §8) a candidate
+  the pool still can't cover, naming its own cost in the reason.
+  `max_exposure_per_underlying` caps any single name's share of the pool.
+  Also derives TP (50%)/SL (3×) price levels from the put's credit price
+  (spec §9).
+- `size_directional_positions()`: equal split of the (much smaller)
+  directional budget across whatever was selected (spec §16, literal —
+  no leftover-pooling needed here, an ATM 0DTE premium is a small fraction
+  of the underlying's price so the "too expensive for its own share" case
+  isn't realistic on this side). No TP/SL — time-based exit only (§18).
+- `apply_max_positions()`: trims approved decisions to `MAX_POSITIONS`,
+  keeping priority order.
+- `strategy_engine.RankedCandidate` extended (not re-fetched) with
+  `atm_call_symbol`/`atm_call_ask`, `atm_put_symbol`/`atm_put_ask`,
+  `put_15d_bid` — Risk Manager's sizing inputs piggyback on the chain
+  fetch `strategy_engine` already does, rather than a second network call.
+
+**Validated live** (`venv/bin/python3 risk_manager.py 2026-09-02`, full
+8-ticker universe, real account, real chain — 2026-08-31 itself had null
+greeks pre-market when checked, a data-availability quirk unrelated to
+this code, so a few-days-out expiration was used to exercise the mechanics
+for real instead): premium-selling top 3 came back NVDA/QQQ/AAPL, and QQQ
+(strike 704 → $70,400/contract) was correctly REJECTed against the
+$31,667 equal share plus $42,750 pooled leftover from NVDA/AAPL — still
+short, so REJECTed with the actual numbers named rather than forced.
+Directional side (MSFT/META/QQQ, from the real `mock_cache/2026-08-28`
+selection) all sized and approved correctly. `options_buying_power` came
+back $100,000 = `cash` on this paper account, confirming the earlier
+finding live.
+
+**Not yet built**: turning an APPROVE into an actual order (Execution
+Agent, next).
+
 ## HITL Review Gate — design decision only, 2026-08-30
 
 Not a "component" in the build sense yet — no code exists for either side
@@ -245,10 +326,26 @@ whenever the Execution Agent gets built.
 
 Not a formal spec component, but real, working infra for Component 6's
 eventual orchestrator:
-- `prompts/morning_decision.md` — the headless decision-only prompt (ranks,
-  dispatches the Analyst, logs — explicitly never places an order; every
-  Alpaca order/cancel/mutate MCP tool is hard-blocked via
-  `--disallowedTools`, not just prompt instruction).
+- `prompts/morning_decision.md` — the headless decision-only prompt.
+  **Extended 2026-08-30** once Risk Manager existed: ranks (`strategy_engine`),
+  dispatches the Analyst, transcribes its reads to JSON, runs
+  `directional_selection.py` as a real subprocess (not re-derived by the
+  LLM — was previously described as "apply spec §14 yourself," fixed to
+  actually shell out to the deterministic script), then runs
+  `risk_manager.py --json` as a subprocess and logs its real APPROVE/REJECT
+  batch. Still explicitly never places an order — every Alpaca
+  order/cancel/mutate MCP tool is hard-blocked via `--disallowedTools`, not
+  just prompt instruction; Risk Manager's output is logged as this run's
+  final result, not acted on further, since Component 6 (Execution Agent)
+  doesn't exist yet. `risk_manager.py`'s own CLI was tightened alongside
+  this: the selection-result JSON path is now a required argument (no
+  silent fallback to the `mock_cache` fixture — that was fine for manual
+  testing, dangerously wrong for an automated run to default to), and it
+  gained a `--json` mode so the prompt can capture its output reliably
+  instead of parsing the human-readable table. Verified end-to-end this
+  session with real data: `directional_selection.py` fed the mock
+  fixture's real Analyst JSON, piped into `risk_manager.py --json`, same
+  correct output as the direct validation run above.
 - `scripts/run_morning_trigger.sh` — wrapper invoking `claude -p` with that
   prompt, absolute `claude` binary path (launchd's PATH is minimal).
 - `prefetch_news.py` + `scripts/run_news_prefetch.sh` — deterministic

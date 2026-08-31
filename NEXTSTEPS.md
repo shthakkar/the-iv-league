@@ -24,60 +24,25 @@ re-running the Analyst subagents. See its README. Regenerate the
 cheap/deterministic parts of it anytime with
 `venv/bin/python3 scripts/save_mock_fixture.py`.
 
-## Immediate next: Risk Manager (Component 5) — covers BOTH sides
+## Done: Risk Manager (Component 5) — covers BOTH sides
 
-**Correction from earlier planning**: contract selection and sizing are
-not a separate step before the Risk Manager — spec §22 has the Risk
-Manager's own output include contract and quantity, since it needs the
-option chain as an input anyway (to check a candidate's actual max loss
-against the daily limit). So this one module does the whole thing per
-candidate, for both premium-selling and directional:
+Built, tested (17 unit tests + a live end-to-end run) — see `PROGRESS.md`'s
+Component 5 entry for the full writeup. Two spec changes came out of
+designing it, both logged in `PROGRESS.md`'s "Architecture decisions
+made": premium-selling switched from a defined-risk credit spread to a
+plain cash-secured put (spec §6), and the max-daily-loss hard limit (spec
+§23) was dropped for V1 as inert dead code with no position recycling.
 
-**Premium-selling side** (top 3 from `strategy_engine.split_candidates()`):
-1. Already have the 15Δ put (from the ranking). Pick the protective
-   further-OTM put — spread width as a new `config.SPREAD_WIDTH` constant,
-   not hardcoded.
-2. Size toward the ~95%/3 ≈ $31,667 per-name target (spec §8) — Risk
-   Manager decides actual contract quantity from spread width/max
-   loss/buying power, not a forced full allocation.
-3. Check against spec §23 hard limits (below).
-4. Output APPROVE (ticker, contract legs, quantity, max risk, TP/SL
-   levels) or REJECT + reason.
-
-**Directional side** (the `selected` list from
-`directional_selection.py` — already built, tested against
-`mock_cache/2026-08-28/selection_result.json`):
-1. BULLISH → 0DTE call, BEARISH → 0DTE put, ATM or slightly ITM (spec
-   §15 — avoid far-OTM lottery strikes).
-2. Size within $5,000 total directional premium, split across however
-   many were selected (spec §16).
-3. Check against spec §23 hard limits.
-4. Output APPROVE (ticker, contract, quantity, capital allocation) or
-   REJECT + reason. No stop-loss/take-profit fields for this side — exit
-   is purely time-based (§18).
-
-**Hard risk controls, spec §23** (apply to both sides):
-- Max daily loss (configurable %, e.g. 2% = $2,000) — no new positions
-  once hit; existing positions still follow their own exit rules.
-- Max exposure per underlying.
-- Max number of positions.
-- Max number of re-entries (relevant once position recycling exists —
-  see Deferred below).
-
-**Testing**: directional side can be fully tested right now against the
-mock fixture, no live calls needed. Premium-selling side needs a real (or
-Aug-31-proxy, same pattern as before) chain fetch via `strategy_engine`
-to get real strikes/prices to size against.
-
-## Then: Execution Agent — places the approved orders
+## Immediate next: Execution Agent — places the approved orders
 
 Once Risk Manager approves something:
 1. Place the order via the raw `alpaca-py` SDK (`TradingClient`), **not**
    the MCP server — a deterministic script can't invoke an MCP tool
    without building an MCP client from scratch, and the "must use
    Alpaca's MCP server" requirement is already satisfied by the Analyst's
-   read-only usage (see PROGRESS.md's handoff design note). Multi-leg
-   support needed for the premium-selling credit spread.
+   read-only usage (see PROGRESS.md's handoff design note). Premium-selling
+   is a plain single-leg CSP order now (spec §6 changed 2026-08-30, see
+   PROGRESS.md) — no multi-leg/`mleg` order needed for that side.
 2. Log the entry (ticker, contract, qty, price, timestamp, side) — spec
    §27 data logging starts here, not bolted on later.
 3. Monitoring loop, ~every 1 minute (spec §19-20):

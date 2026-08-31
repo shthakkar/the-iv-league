@@ -77,9 +77,19 @@ premium-selling candidates.
 
 ## 6. Premium-Selling Strategy
 
-Sell the approximately **15Δ 0DTE put**. V1 should preferably use a
-**defined-risk put credit spread** (sell 15Δ put, buy a lower-strike put for
-protection) rather than an uncovered/naked put. Spread width configurable.
+Sell the approximately **15Δ 0DTE put**, **cash-secured** (full strike × 100
+secured per contract) — not a defined-risk credit spread. **Changed
+2026-08-30** from the original defined-risk-spread design (sell 15Δ put, buy
+a lower-strike put for protection); no protective leg in V1. Trade-off,
+accepted knowingly: buying power required per contract is now the full
+strike (versus just the spread width), so fewer contracts fit the same
+budget and capital utilization is lower — but risk is uncapped below the
+strike rather than structurally floored by a protective put, which matters
+because Alpaca has no broker-side stop-loss for options (confirmed via
+their OrderClass API spec: `bracket`/`oco`/`oto` are equity-only; options
+only support `simple`/`mleg`) — the §9 stop-loss is enforced entirely by the
+Execution Agent's polling loop, with no backstop under it if that loop
+lags or a move gaps through.
 
 ## 7. Capital Allocation
 
@@ -91,15 +101,16 @@ per position.
 ## 8. Premium-Selling Position Allocation
 
 Target roughly equal allocation across the top 3: $95,000 / 3 ≈ $31,667. The
-Risk Manager determines actual contract quantity based on spread width, max
-loss, buying power, portfolio exposure, existing positions, daily risk
-limits. Never force a trade merely to use all available capital.
+Risk Manager determines actual contract quantity based on the CSP's buying
+power requirement (strike × 100 × contracts), portfolio exposure, existing
+positions, daily risk limits. Never force a trade merely to use all
+available capital.
 
 ## 9. Short-Put Exit Rules
 
 - **Take Profit**: close at ~**50%** of original premium (sold $1.00 → close ~$0.50).
 - **Stop Loss**: close at **3×** original premium (sold $1.00 → stop ~$3.00).
-  Account for the spread's executable market price and bid/ask.
+  Account for the position's executable market price and bid/ask.
 - **End-of-Day**: all short option positions must be closed before expiration.
   Hard EOD liquidation time. No position intentionally left to expire in V1.
 
