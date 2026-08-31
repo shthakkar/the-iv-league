@@ -86,7 +86,20 @@ EXPIRATION_OVERRIDE = os.environ.get("EXPIRATION_OVERRIDE", "")
 # options_buying_power specifically (margin doesn't extend to options on
 # this account, confirmed via Alpaca's account-field docs).
 PREMIUM_SELL_ALLOCATION_PCT = 0.95
-DIRECTIONAL_ALLOCATION_PCT = 0.05
+
+# Directional side used to be a flat 5% of balance regardless of how many
+# candidates actually cleared MIN_DIRECTIONAL_CONFIDENCE that day (spec
+# section 7's literal 95/5 split) -- but that risks the same dollar amount
+# whether 1 name or 3 names made the cut, so a single-name day (breadth/
+# conviction was low -- exactly what happened 2026-08-31, where only one
+# ticker cleared the confidence bar) got exposed for the SAME capital as a
+# full 3-name day. Replaced 2026-08-31 with a per-selected-stock formula,
+# an explicit human/product decision (not a Strategist Agent proposal):
+# 1% of balance per selected directional candidate, capped at 3% total.
+# 1 selected -> 1%, 2 -> 2%, 3 (spec section 14's max) -> 3% -- a deliberate
+# reduction from the old flat 5% ceiling. See risk_manager.compute_budgets().
+DIRECTIONAL_PCT_PER_STOCK = 0.01  # 1% of balance per selected directional candidate
+DIRECTIONAL_MAX_PCT = 0.03        # cap on total directional allocation regardless of count
 
 # Spec section 23 hard limits. Max daily loss is deliberately NOT here —
 # dropped for V1, see PROGRESS.md (its "halt new positions" behavior is

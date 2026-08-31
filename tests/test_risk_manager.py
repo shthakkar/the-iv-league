@@ -32,17 +32,40 @@ def _ranked(ticker, atm_strike, atm_call_symbol, atm_call_ask, atm_put_symbol, a
 
 
 class ComputeBudgetsTests(unittest.TestCase):
-    def test_splits_95_5_off_options_buying_power(self):
+    def test_splits_95_pct_premium_off_options_buying_power(self):
+        # Premium side is unaffected by num_directional_selected.
         snapshot = rm.AccountSnapshot(cash=100_000, options_buying_power=100_000, equity=100_000)
-        budgets = rm.compute_budgets(snapshot)
+        budgets = rm.compute_budgets(snapshot, num_directional_selected=3)
         self.assertAlmostEqual(budgets.premium_sell_budget, 95_000)
-        self.assertAlmostEqual(budgets.directional_budget, 5_000)
 
     def test_falls_back_to_cash_when_options_buying_power_is_zero(self):
         snapshot = rm.AccountSnapshot(cash=50_000, options_buying_power=0, equity=50_000)
-        budgets = rm.compute_budgets(snapshot)
+        budgets = rm.compute_budgets(snapshot, num_directional_selected=3)
         self.assertAlmostEqual(budgets.premium_sell_budget, 47_500)
-        self.assertAlmostEqual(budgets.directional_budget, 2_500)
+        # 3 selected -> 1% * 3 = 3%, under the 3% cap -> exactly at the cap.
+        self.assertAlmostEqual(budgets.directional_budget, 1_500)
+
+    def test_directional_budget_is_1_pct_per_selected_stock(self):
+        snapshot = rm.AccountSnapshot(cash=100_000, options_buying_power=100_000, equity=100_000)
+        budgets = rm.compute_budgets(snapshot, num_directional_selected=1)
+        self.assertAlmostEqual(budgets.directional_budget, 1_000)  # 1% of 100k
+
+    def test_directional_budget_is_2_pct_for_two_selected_stocks(self):
+        snapshot = rm.AccountSnapshot(cash=100_000, options_buying_power=100_000, equity=100_000)
+        budgets = rm.compute_budgets(snapshot, num_directional_selected=2)
+        self.assertAlmostEqual(budgets.directional_budget, 2_000)  # 2% of 100k
+
+    def test_directional_budget_is_3_pct_for_three_selected_stocks(self):
+        snapshot = rm.AccountSnapshot(cash=100_000, options_buying_power=100_000, equity=100_000)
+        budgets = rm.compute_budgets(snapshot, num_directional_selected=3)
+        self.assertAlmostEqual(budgets.directional_budget, 3_000)  # 3% of 100k, at the cap
+
+    def test_directional_budget_caps_at_3_pct_beyond_three_selected_stocks(self):
+        # Hypothetical 4+ selected (MAX_DIRECTIONAL_SELECTED is spec-fixed at 3,
+        # but the formula itself must still cap rather than exceed it).
+        snapshot = rm.AccountSnapshot(cash=100_000, options_buying_power=100_000, equity=100_000)
+        budgets = rm.compute_budgets(snapshot, num_directional_selected=4)
+        self.assertAlmostEqual(budgets.directional_budget, 3_000)  # still capped at 3%, not 4%
 
 
 class AllocatePremiumPositionsTests(unittest.TestCase):
@@ -172,17 +195,44 @@ class BuildDirectionalCandidatesTests(unittest.TestCase):
 
     def test_bullish_picks_the_atm_call(self):
         selected = [{"ticker": "META", "direction": "BULLISH", "confidence": 60}]
-        candidates = rm.build_directional_candidates(selected, self.lookup)
+        candidates, rejects = rm.build_directional_candidates(selected, self.lookup)
         self.assertEqual(candidates, [
             rm.DirectionalCandidate(ticker="META", symbol="META260828C00577500", ask_price=4.00)
         ])
+        self.assertEqual(rejects, [])
 
     def test_bearish_picks_the_atm_put(self):
         selected = [{"ticker": "MSFT", "direction": "BEARISH", "confidence": 60}]
-        candidates = rm.build_directional_candidates(selected, self.lookup)
+        candidates, rejects = rm.build_directional_candidates(selected, self.lookup)
         self.assertEqual(candidates, [
             rm.DirectionalCandidate(ticker="MSFT", symbol="MSFT260828P00512500", ask_price=3.10)
         ])
+        self.assertEqual(rejects, [])
+
+    def test_ticker_not_on_directional_side_of_current_ranking_is_rejected_not_keyerror(self):
+        # Reproduces the live 2026-08-31 bug: a selected ticker (e.g. AAPL) that
+        # a stale selection_result.json still names, but that has since shifted
+        # onto the premium side of a LATER ranking run -- so it's absent from
+        # this (correctly current-ranking-scoped) directional lookup.
+        selected = [{"ticker": "AAPL", "direction": "BULLISH", "confidence": 60}]
+        candidates, rejects = rm.build_directional_candidates(selected, self.lookup)
+        self.assertEqual(candidates, [])
+        self.assertEqual(len(rejects), 1)
+        self.assertFalse(rejects[0].approved)
+        self.assertEqual(rejects[0].ticker, "AAPL")
+        self.assertIn("directional side", rejects[0].reason)
+        self.assertIn("stale", rejects[0].reason)
+
+    def test_mismatched_ticker_does_not_block_a_valid_selected_ticker(self):
+        selected = [
+            {"ticker": "AAPL", "direction": "BULLISH", "confidence": 60},  # not in lookup -- stale
+            {"ticker": "META", "direction": "BULLISH", "confidence": 60},  # in lookup -- normal
+        ]
+        candidates, rejects = rm.build_directional_candidates(selected, self.lookup)
+        self.assertEqual(candidates, [
+            rm.DirectionalCandidate(ticker="META", symbol="META260828C00577500", ask_price=4.00)
+        ])
+        self.assertEqual([r.ticker for r in rejects], ["AAPL"])
 
 
 class EvaluateTests(unittest.TestCase):
@@ -201,7 +251,8 @@ class EvaluateTests(unittest.TestCase):
         result = rm.evaluate(premium_ranked, directional_lookup, directional_selected, snapshot=snapshot)
 
         self.assertAlmostEqual(result.budgets.premium_sell_budget, 95_000)
-        self.assertAlmostEqual(result.budgets.directional_budget, 5_000)
+        # 1 directional candidate selected -> 1% of balance (formula, not the old flat 5%).
+        self.assertAlmostEqual(result.budgets.directional_budget, 1_000)
         self.assertEqual(len(result.premium_decisions), 1)
         self.assertTrue(result.premium_decisions[0].approved)
         self.assertEqual(result.premium_decisions[0].ticker, "NVDA")
@@ -216,6 +267,43 @@ class EvaluateTests(unittest.TestCase):
             result = rm.evaluate([], {}, [])
             mock_snapshot.assert_called_once()
             self.assertAlmostEqual(result.budgets.premium_sell_budget, 95_000)
+
+    def test_generated_at_is_an_iso_timestamp_included_in_asdict(self):
+        import dataclasses
+        import datetime
+
+        snapshot = rm.AccountSnapshot(cash=100_000, options_buying_power=100_000, equity=100_000)
+        result = rm.evaluate([], {}, [], snapshot=snapshot)
+
+        # Round-trips through datetime.fromisoformat -- proves it's a real ISO-8601 string.
+        parsed = datetime.datetime.fromisoformat(result.generated_at)
+        self.assertIsNotNone(parsed.tzinfo)
+
+        payload = dataclasses.asdict(result)
+        self.assertEqual(payload["generated_at"], result.generated_at)
+
+    def test_directional_candidate_not_on_current_ranking_directional_side_is_rejected(self):
+        # Integration-level reproduction of the live 2026-08-31 bug: selection_result.json
+        # names AAPL, but the CURRENT ranking run's directional side (directional_ranked_lookup,
+        # as scoped by strategy_engine.split_candidates) no longer has AAPL -- it shifted onto
+        # the premium side. Must not KeyError, must not silently pass AAPL through.
+        premium_ranked = []
+        directional_ranked_lookup = {
+            "META": _ranked("META", 577.5, "META260828C00577500", 4.00, "META260828P00577500", 4.10,
+                             565.0, "META260828P00565000", 1.50),
+        }
+        directional_selected = [
+            {"ticker": "AAPL", "direction": "BULLISH", "confidence": 60},  # stale -- not in lookup
+            {"ticker": "META", "direction": "BULLISH", "confidence": 60},  # current -- in lookup
+        ]
+        snapshot = rm.AccountSnapshot(cash=100_000, options_buying_power=100_000, equity=100_000)
+
+        result = rm.evaluate(premium_ranked, directional_ranked_lookup, directional_selected, snapshot=snapshot)
+
+        by_ticker = {d.ticker: d for d in result.directional_decisions}
+        self.assertFalse(by_ticker["AAPL"].approved)
+        self.assertIn("directional side", by_ticker["AAPL"].reason)
+        self.assertTrue(by_ticker["META"].approved)
 
 
 if __name__ == "__main__":

@@ -28,6 +28,7 @@
 # ================================================================
 from __future__ import annotations
 
+import datetime
 import math
 from dataclasses import dataclass
 
@@ -99,11 +100,21 @@ def get_account_snapshot() -> AccountSnapshot:
     )
 
 
-def compute_budgets(snapshot: AccountSnapshot) -> Budgets:
+def compute_budgets(snapshot: AccountSnapshot, num_directional_selected: int) -> Budgets:
+    """Directional budget is 1% of balance per selected directional candidate,
+    capped at 3% total regardless of count (config.DIRECTIONAL_PCT_PER_STOCK /
+    DIRECTIONAL_MAX_PCT -- see config.py's comment for the 2026-08-31 rationale).
+    num_directional_selected is the count from the day's selection, not the
+    count that ends up APPROVED after sizing/rejection -- the budget reflects
+    conviction/breadth at selection time."""
     balance = snapshot.available_balance
+    directional_pct = min(
+        config.DIRECTIONAL_PCT_PER_STOCK * num_directional_selected,
+        config.DIRECTIONAL_MAX_PCT,
+    )
     return Budgets(
         premium_sell_budget=balance * config.PREMIUM_SELL_ALLOCATION_PCT,
-        directional_budget=balance * config.DIRECTIONAL_ALLOCATION_PCT,
+        directional_budget=balance * directional_pct,
     )
 
 
@@ -233,20 +244,51 @@ def build_premium_candidates(ranked: list) -> list[PremiumCandidate]:
     ]
 
 
-def build_directional_candidates(selected: list[dict], ranked_lookup: dict) -> list[DirectionalCandidate]:
+def build_directional_candidates(
+    selected: list[dict], directional_ranked_lookup: dict
+) -> tuple[list[DirectionalCandidate], list[Decision]]:
     """selected: directional_selection.select_directional()'s 'selected' list
     ({ticker, direction, confidence, ...} dicts -- UNDECIDED never appears here,
-    already dropped upstream). ranked_lookup: {ticker: RankedCandidate} built
-    from strategy_engine's directional split. BULLISH -> buy the ATM call,
-    BEARISH -> buy the ATM put (spec section 15)."""
+    already dropped upstream). directional_ranked_lookup: {ticker: RankedCandidate}
+    built ONLY from the DIRECTIONAL side of the CURRENT ranking run's
+    strategy_engine.split_candidates() -- must NOT be the full undiscriminated
+    ranked list. That distinction is the fix for the live 2026-08-31 bug: a
+    stale selection_result.json (built from an EARLIER ranking run) can still
+    name a ticker that has since shifted onto the PREMIUM side of a LATER
+    ranking run; pulling it from a full ranked_lookup silently let it leak
+    into directional_decisions with a real order behind it -- see
+    risk-decisions-2026-08-31.json / PROGRESS.md's "ranking-consistency gap".
+
+    A selected ticker not present in directional_ranked_lookup is not a
+    KeyError and not silently passed through -- it's returned as an explicit
+    REJECT Decision naming the mismatch (same style as allocate_premium_
+    positions' REJECT reasons).
+
+    BULLISH -> buy the ATM call, BEARISH -> buy the ATM put (spec section 15).
+
+    Returns (candidates, reject_decisions): reject_decisions holds only the
+    ranking-mismatch REJECTs, for evaluate() to merge alongside size_
+    directional_positions()'s output into the final directional_decisions list."""
     candidates = []
+    reject_decisions = []
     for s in selected:
-        c = ranked_lookup[s["ticker"]]
+        ticker = s["ticker"]
+        c = directional_ranked_lookup.get(ticker)
+        if c is None:
+            reject_decisions.append(Decision(
+                ticker=ticker,
+                approved=False,
+                reason=(
+                    f"{ticker} not on directional side of the current ranking snapshot "
+                    f"-- selection_result may be stale"
+                ),
+            ))
+            continue
         if s["direction"] == "BULLISH":
             candidates.append(DirectionalCandidate(ticker=c.ticker, symbol=c.atm_call_symbol, ask_price=c.atm_call_ask))
         elif s["direction"] == "BEARISH":
             candidates.append(DirectionalCandidate(ticker=c.ticker, symbol=c.atm_put_symbol, ask_price=c.atm_put_ask))
-    return candidates
+    return candidates, reject_decisions
 
 
 @dataclass
@@ -255,6 +297,8 @@ class RiskManagerResult:
     budgets: Budgets
     premium_decisions: list[Decision]
     directional_decisions: list[Decision]
+    generated_at: str  # ISO-8601, config.ET -- lets a downstream consumer (execution_agent.py)
+                        # log which decisions-file version it actually consumed.
 
 
 def evaluate(
@@ -265,9 +309,15 @@ def evaluate(
 ) -> RiskManagerResult:
     """Top-level entry point: strategy_engine's premium-selling candidates +
     directional_selection's selected list in, a full APPROVE/REJECT batch out.
-    One account snapshot for the whole batch (not re-fetched per candidate)."""
+    One account snapshot for the whole batch (not re-fetched per candidate).
+
+    directional_ranked_lookup MUST be scoped to the DIRECTIONAL side of the
+    CURRENT ranking run (strategy_engine.split_candidates()'s second element,
+    keyed by ticker) -- never the full ranked list. See build_directional_
+    candidates()'s docstring for why."""
     snapshot = snapshot or get_account_snapshot()
-    budgets = compute_budgets(snapshot)
+    budgets = compute_budgets(snapshot, len(directional_selected))
+    generated_at = datetime.datetime.now(config.ET).isoformat()
 
     premium_candidates = build_premium_candidates(premium_ranked)
     # No per-name concentration cap -- spec section 8 is spec-literal here:
@@ -285,8 +335,13 @@ def evaluate(
         budgets.premium_sell_budget,
     )
 
-    directional_candidates = build_directional_candidates(directional_selected, directional_ranked_lookup)
-    directional_decisions = size_directional_positions(directional_candidates, budgets.directional_budget)
+    directional_candidates, directional_mismatch_rejects = build_directional_candidates(
+        directional_selected, directional_ranked_lookup
+    )
+    directional_decisions = (
+        size_directional_positions(directional_candidates, budgets.directional_budget)
+        + directional_mismatch_rejects
+    )
 
     combined = apply_max_positions(premium_decisions + directional_decisions)
     n_premium = len(premium_decisions)
@@ -295,6 +350,7 @@ def evaluate(
         budgets=budgets,
         premium_decisions=combined[:n_premium],
         directional_decisions=combined[n_premium:],
+        generated_at=generated_at,
     )
 
 
@@ -372,12 +428,16 @@ if __name__ == "__main__":
     skipped = [se.SkippedTicker(**s) for s in ranking_payload["skipped"]]
     expiration_used = ranking_payload["expiration_used"]
     premium_ranked, directional_ranked = se.split_candidates(ranked)
-    ranked_lookup = {c.ticker: c for c in ranked}
+    # Directional-side-only lookup -- NOT the full ranked list. A selected
+    # ticker that's shifted onto the premium side of THIS ranking run (stale
+    # selection_result.json) must REJECT via build_directional_candidates,
+    # not silently resolve through an undiscriminated lookup (2026-08-31 bug).
+    directional_ranked_lookup = {c.ticker: c for c in directional_ranked}
 
     with open(args.selection_result) as f:
         directional_selected = json.load(f)["selected"]
 
-    result = evaluate(premium_ranked, ranked_lookup, directional_selected)
+    result = evaluate(premium_ranked, directional_ranked_lookup, directional_selected)
 
     if args.json:
         print(json.dumps(dataclasses.asdict(result), indent=2))
