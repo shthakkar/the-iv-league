@@ -270,10 +270,19 @@ def evaluate(
     budgets = compute_budgets(snapshot)
 
     premium_candidates = build_premium_candidates(premium_ranked)
+    # No per-name concentration cap -- spec section 8 is spec-literal here:
+    # "target roughly equal allocation... never force a trade merely to use
+    # all available capital." A 35%-of-budget cap lived here previously
+    # (config.MAX_EXPOSURE_PER_UNDERLYING_PCT, never spec-fixed) but was
+    # actively working against the leftover-pooling pass below: pooling
+    # exists specifically to rescue a candidate that couldn't afford its own
+    # equal share, and the cap then re-blocked that same rescue once the
+    # pool was big enough to actually help. Removed 2026-08-31 after it
+    # rejected every single premium-selling candidate on a live run purely
+    # on cap-vs-pool tension, not genuine unaffordability -- see PROGRESS.md.
     premium_decisions = allocate_premium_positions(
         premium_candidates,
         budgets.premium_sell_budget,
-        max_exposure_per_underlying=snapshot.available_balance * config.MAX_EXPOSURE_PER_UNDERLYING_PCT,
     )
 
     directional_candidates = build_directional_candidates(directional_selected, directional_ranked_lookup)

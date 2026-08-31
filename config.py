@@ -23,16 +23,20 @@ if not API_KEY or not API_SECRET:
 # ---------------------------------
 
 # ---------- TRADING UNIVERSE ----------
-# Demo default — full V1 spec universe is SPY QQQ NVDA TSLA AAPL AMZN MSFT META.
-# Kept small here so chain-fetch/ranking stays fast to iterate on and cheap to
-# test against; add tickers freely, nothing else needs to change.
+# Full V1 spec universe (spec §2). Was a 4-ticker demo default
+# (SPY QQQ NVDA TSLA) during early dev for faster chain-fetch/ranking
+# iteration — every one of the 8 below was already tested via
+# UNIVERSE_OVERRIDE and works (see PROGRESS.md). Bumped to the real
+# default 2026-08-31 once live cron runs started, after today's first
+# live run (and its news prefetch) silently ran on only 4 names —
+# flagged by the decision run itself as a prompt/code mismatch.
 # Override for a one-off run without editing this file, e.g.:
-#   UNIVERSE_OVERRIDE=SPY,QQQ,NVDA,TSLA,AAPL,AMZN,MSFT,META python3 strategy_engine.py
+#   UNIVERSE_OVERRIDE=SPY,QQQ python3 strategy_engine.py
 _universe_override = os.environ.get("UNIVERSE_OVERRIDE", "")
 UNIVERSE = (
     [t.strip().upper() for t in _universe_override.split(",") if t.strip()]
     if _universe_override
-    else ["SPY", "QQQ", "NVDA", "TSLA"]
+    else ["SPY", "QQQ", "NVDA", "TSLA", "AAPL", "AMZN", "MSFT", "META"]
 )
 
 # How many of the top-ranked-by-skew tickers become premium-selling candidates.
@@ -47,6 +51,13 @@ TARGET_PUT_DELTA = 0.15
 # to comfortably contain the ATM strike and a 0.15-delta put on any of the
 # UNIVERSE names without dragging in the whole deep ITM/OTM chain.
 STRIKE_RANGE_PCT = 0.20
+
+# Risk-free rate for the local Black-Scholes fallback (black_scholes.py) --
+# used only when Alpaca's own greeks/IV are missing, which is every 0DTE
+# contract (see black_scholes.py's module docstring and PROGRESS.md). At
+# these short time-to-expirations the discounting effect is negligible, so
+# this is a stable approximate constant, not something pulled live.
+RISK_FREE_RATE = 0.045
 
 # ---------- DIRECTIONAL SELECTION ----------
 # Minimum Analyst confidence (0-100) for a directional candidate to be
@@ -84,12 +95,18 @@ DIRECTIONAL_ALLOCATION_PCT = 0.05
 # directional under current PREMIUM_SELL_COUNT/MAX_DIRECTIONAL_SELECTED).
 MAX_POSITIONS = 6
 
-# Max capital committed to any single underlying, as a fraction of the
-# available balance — prevents concentration if a name's sizing would
-# otherwise dominate the budget (spec section 23). 0.35 sits just above the
-# natural ~1/3 three-way premium-selling split so it doesn't bind in the
-# common case, only when something unusual would concentrate exposure.
-MAX_EXPOSURE_PER_UNDERLYING_PCT = 0.35
+# MAX_EXPOSURE_PER_UNDERLYING_PCT (0.35) removed 2026-08-31 — was never
+# spec-fixed (spec section 8 says "roughly equal allocation... never force
+# a trade merely to use all available capital", nothing about a per-name
+# ceiling), and was actively fighting allocate_premium_positions()'s own
+# leftover-pooling pass: pooling exists to rescue a candidate that couldn't
+# afford its own equal share, and the cap then re-blocked that same rescue
+# once the pool was big enough to help. Rejected every premium-selling
+# candidate on a live run for exactly this reason before being removed —
+# see PROGRESS.md and risk_manager.py's evaluate(). allocate_premium_
+# positions() still accepts max_exposure_per_underlying as an optional
+# param (tested in tests/test_risk_manager.py) if a cap is ever wanted
+# again — it's just no longer passed by the live call.
 
 # ---------- EXECUTION AGENT ----------
 # Hard EOD liquidation time for short option positions (spec section 9 --
