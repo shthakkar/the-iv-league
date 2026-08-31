@@ -110,5 +110,64 @@ class BuildDirectionalPositionTests(unittest.TestCase):
         self.assertEqual(position.qty, 2)
 
 
+class FormatEntryLineTests(unittest.TestCase):
+    # AAPL TP mismatch investigation (2026-08-31 post-mortem): the
+    # pre-trade risk-decisions.json estimate ($0.09 TP) is a different
+    # number from the real TP threshold execution_agent.py actually
+    # armed off the real fill ($0.27 -> $0.135 TP). That real threshold
+    # was never logged anywhere, so an auditor had no way to tell the two
+    # apart. This locks the entry log line down so it now is.
+    def test_includes_real_tp_and_sl_for_a_premium_entry(self):
+        line = ea._format_entry_line(
+            "AAPL", "AAPL260831P00312500", 1, 0.27, _dt(10, 35), "SELL_TO_OPEN",
+            take_profit_price=0.135, stop_loss_price=0.81,
+        )
+        self.assertEqual(
+            line,
+            "ENTRY 2026-08-31T10:35:00+00:00 AAPL AAPL260831P00312500 "
+            "qty=1 price=0.27 side=SELL_TO_OPEN tp=0.14 sl=0.81",
+        )
+
+    def test_omits_tp_sl_fields_for_a_directional_entry(self):
+        # Directional positions have no TP/SL at all (spec section 18) --
+        # the log line must not gain stray fields for that side.
+        line = ea._format_entry_line(
+            "META", "META260831C00577500", 2, 4.15, _dt(9, 41), "BUY_TO_OPEN",
+        )
+        self.assertEqual(
+            line,
+            "ENTRY 2026-08-31T09:41:00+00:00 META META260831C00577500 "
+            "qty=2 price=4.15 side=BUY_TO_OPEN",
+        )
+
+
+class FormatDecisionsLoadedLineTests(unittest.TestCase):
+    # Second gap from the same post-mortem: with no record of which
+    # risk-decisions-<date>.json file (and version) was actually
+    # consumed, matching a live trade back to its decision file took
+    # manual cross-referencing of contract symbols/quantities across
+    # multiple file versions.
+    def test_includes_path_and_generated_at_when_present(self):
+        line = ea._format_decisions_loaded_line(
+            _dt(10, 30), "risk-decisions-2026-08-31.json",
+            {"generated_at": "2026-08-31T10:29:03-04:00"},
+        )
+        self.assertEqual(
+            line,
+            "[2026-08-31T10:30:00+00:00] Loaded decisions from "
+            "risk-decisions-2026-08-31.json (generated_at=2026-08-31T10:29:03-04:00)",
+        )
+
+    def test_defaults_generated_at_when_missing_from_older_files(self):
+        line = ea._format_decisions_loaded_line(
+            _dt(10, 30), "risk-decisions-2026-08-31.json", {},
+        )
+        self.assertEqual(
+            line,
+            "[2026-08-31T10:30:00+00:00] Loaded decisions from "
+            "risk-decisions-2026-08-31.json (generated_at=unknown)",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

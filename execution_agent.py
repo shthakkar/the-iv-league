@@ -237,7 +237,10 @@ def open_premium_position(decision: rm.Decision) -> PremiumPosition:
     position = build_premium_position(decision, fill_price, entered_at=datetime.datetime.now(config.ET))
     stop_order = submit_stop_buy_to_close(position.symbol, position.qty, position.stop_loss_price)
     position.stop_order_id = stop_order.id
-    log_entry(position.ticker, position.symbol, position.qty, fill_price, position.entered_at, "SELL_TO_OPEN")
+    log_entry(
+        position.ticker, position.symbol, position.qty, fill_price, position.entered_at, "SELL_TO_OPEN",
+        take_profit_price=position.take_profit_price, stop_loss_price=position.stop_loss_price,
+    )
     return position
 
 
@@ -329,12 +332,49 @@ def tick_directional_position(position: DirectionalPosition) -> bool:
 # ----------------------------------------------------------------
 # Logging -- spec section 27. Append-only, one line per event.
 # ----------------------------------------------------------------
-def log_entry(ticker, symbol, qty, price, timestamp, side) -> None:
-    _append_log(f"ENTRY {timestamp.isoformat()} {ticker} {symbol} qty={qty} price={price:.2f} side={side}")
+def _format_entry_line(
+    ticker, symbol, qty, price, timestamp, side,
+    take_profit_price: float | None = None, stop_loss_price: float | None = None,
+) -> str:
+    """Premium entries pass the REAL take_profit_price/stop_loss_price just
+    computed from the actual fill (build_premium_position) so the log is
+    self-sufficient for later audits -- risk-decisions.json only has Risk
+    Manager's pre-trade estimate, a different number (see the AAPL
+    2026-08-31 post-mortem: pre-trade TP was $0.09, the real armed
+    threshold off the $0.27 fill was $0.135 -- comparing an exit against
+    the wrong one looks like a bug that isn't one). Directional entries
+    have no TP/SL at all (spec section 18) and omit both fields."""
+    line = f"ENTRY {timestamp.isoformat()} {ticker} {symbol} qty={qty} price={price:.2f} side={side}"
+    if take_profit_price is not None:
+        line += f" tp={take_profit_price:.2f}"
+    if stop_loss_price is not None:
+        line += f" sl={stop_loss_price:.2f}"
+    return line
+
+
+def log_entry(
+    ticker, symbol, qty, price, timestamp, side,
+    take_profit_price: float | None = None, stop_loss_price: float | None = None,
+) -> None:
+    _append_log(_format_entry_line(
+        ticker, symbol, qty, price, timestamp, side, take_profit_price, stop_loss_price,
+    ))
 
 
 def log_exit(ticker, symbol, qty, price, timestamp, reason) -> None:
     _append_log(f"EXIT  {timestamp.isoformat()} {ticker} {symbol} qty={qty} price={price:.2f} reason={reason}")
+
+
+def _format_decisions_loaded_line(now: datetime.datetime, risk_decisions_path: str, data: dict) -> str:
+    """Heartbeat-style line (matches run()'s other print()s) recording
+    which decisions file was actually consumed, and its generated_at if
+    present. Closes the other gap the same post-mortem surfaced: with no
+    record of which risk-decisions-<date>.json version was traded, tying
+    a live fill back to its decision file took manual cross-referencing
+    of contract symbols/quantities across versions. generated_at is read
+    defensively via .get() -- older decision files predate the field."""
+    generated_at = data.get("generated_at", "unknown")
+    return f"[{now.isoformat()}] Loaded decisions from {risk_decisions_path} (generated_at={generated_at})"
 
 
 def _append_log(line: str) -> None:
@@ -356,6 +396,8 @@ def run(risk_decisions_path: str) -> None:
 
     with open(risk_decisions_path) as f:
         data = json.load(f)
+
+    print(_format_decisions_loaded_line(datetime.datetime.now(config.ET), risk_decisions_path, data), flush=True)
 
     premium_positions = [
         open_premium_position(rm.Decision(**d))
