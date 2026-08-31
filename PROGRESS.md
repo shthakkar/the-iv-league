@@ -49,14 +49,26 @@ plan — see git log for the granular history.
   per-name budget (checked against the real NVDA/AMZN/AAPL run below: 1
   contract each at the $31,667 target, ~83% budget utilization, no room
   to size up). Knowingly accepted trade-off: risk is now uncapped below
-  the strike instead of structurally floored by a protective put —
-  material because Alpaca has **no broker-side stop-loss for options**
-  (checked their OrderClass API spec: `bracket`/`oco`/`oto` order classes
-  are equity-only; options only support `simple`/`mleg`), so the §9 3×
-  stop-loss is enforced entirely by the Execution Agent's own polling
-  loop with nothing backstopping a gap or a lagging loop. `SPREAD_WIDTH`
-  config constant and the protective-put fetch step are dropped from the
-  Risk Manager design as a result.
+  the strike instead of structurally floored by a protective put.
+  **Correction, 2026-08-30, later same session**: originally recorded
+  here as "Alpaca has no broker-side stop-loss for options" — checked
+  their OrderClass API spec (`bracket`/`oco`/`oto` are equity-only) and
+  concluded from that alone that no stop-loss mechanism existed for
+  options at all. That was wrong: `bracket`/`oco`/`oto` (atomically
+  bundling TP+SL as child orders) really are equity-only, but a
+  standalone `type: "stop"` order (`order_class: "simple"`) works fine
+  on a single option leg and genuinely holds/fires server-side —
+  confirmed by checking the sibling `alpacabot` project (per the user's
+  prompt, since it's already placed real option trades): its
+  `trade_manager.py` submits exactly this via `submit_stop_market_sell`,
+  and its real logs show it firing (`🛑 STOP FILLED @ 4.14`,
+  `🛑 STOP FILLED @ 3.12`, both on live SPY option positions). So the §9
+  stop-loss can be a real standing order at Alpaca, not just a
+  polling-loop check — see Component 6 below for how the Execution Agent
+  uses this. `SPREAD_WIDTH` config constant and the protective-put fetch
+  step are still dropped from the Risk Manager design, independent of
+  this correction — that call was about capital efficiency and buying
+  power (spec §8), not about stop-loss reliability.
 - **Daily loss limit (spec §23) dropped for V1**: decided 2026-08-30. Its
   "once hit, no new positions" phrasing is a circuit breaker for a
   *second wave* of trades after an early loss — but V1 never has one
@@ -265,6 +277,68 @@ finding live.
 
 **Not yet built**: turning an APPROVE into an actual order (Execution
 Agent, next).
+
+## Component 6: Execution Agent — 🟡 BUILT + unit tested, NOT yet live-validated
+
+Files: `execution_agent.py`, `tests/test_execution_agent.py` (11 unit
+tests, TDD, same stdlib `unittest` convention as Risk Manager).
+
+Built off the sibling `alpacabot` project's proven live patterns
+(`orders.py`/`trade_manager.py`/`bot.py`) rather than reinvented from
+scratch — checked at the user's prompt specifically because it's already
+placed real option trades. What was carried over deliberately: plain
+MARKET orders for entries and force-closes (its marketable-limit helpers
+exist but its live bot never actually calls them); take-profit as a
+poll-based check + market-close, never a standing limit order; and — the
+one that corrected an earlier mistake in this project (see Component 5's
+entry above and `SPEC.md` §6) — a standalone `type: "stop"` order
+(`order_class: "simple"`) really does work as a genuine broker-side
+stop-loss on a single option leg, confirmed from `alpacabot`'s own fill
+logs (`🛑 STOP FILLED @ 4.14`, `🛑 STOP FILLED @ 3.12`, both real SPY
+option positions).
+
+- **Premium-selling (CSP)**: `sell_to_open` entry → standing stop
+  (`buy_to_close` at 3× the *actual fill price*, not Risk Manager's
+  pre-trade credit estimate) submitted immediately after fill → poll loop
+  checks the stop's status (SL), the bid against 50% of the real fill
+  (TP), and `PREMIUM_EOD_CLOSE_TIME` (EOD) every `MONITOR_POLL_SECS`
+  (60s, spec §19-20's "~every 1 minute"). `tick_premium_position()`
+  handles the stop/poll-loop race the same way `alpacabot`'s
+  `_force_close` does: if a market-close is racing a stop that already
+  filled underneath it, recover the stop's real fill price instead of
+  treating it as a second close.
+- **Directional**: `buy_to_open` entry → no TP/SL at all → pure
+  `DIRECTIONAL_CLOSE_TIME` (2:30 PM ET, spec §18) time-exit. Much
+  simpler than `alpacabot`'s side (no avg-ups/scaling — not in our spec).
+- **Position recycling (spec §10) is NOT implemented**, per the
+  2026-08-30 MVP-scope decision: a position that closes mid-day (only
+  possible on the premium-selling side — directional never closes early)
+  is terminal. Logged, and that capital sits idle for the rest of the
+  day; no re-evaluation, no new position opened in its place.
+- Logging (spec §27): append-only `logs/<date>-execution.log`, one line
+  per entry/exit.
+- New config: `PREMIUM_EOD_CLOSE_TIME` (15:45 ET, 15-min buffer, same
+  convention as `alpacabot`'s `EOD_EXIT_TIME`), `DIRECTIONAL_CLOSE_TIME`
+  (14:30 ET, spec-fixed not tunable), `MONITOR_POLL_SECS` (60), `ET`
+  (stdlib `zoneinfo`, not `pytz` like `alpacabot` — no new dependency).
+
+**Tested**: the pure decision logic only — `check_premium_exit`/
+`check_directional_exit` (TP/SL/EOD/time-exit triggers, priority when
+multiple could apply, missing-quote handling) and `build_premium_position`/
+`build_directional_position` (TP/SL correctly derived from the real fill,
+not the pre-trade estimate). The order-submission wrappers and the
+entry/tick/main-loop I/O are un-mocked thin SDK calls, same split as
+Risk Manager's `get_account_snapshot()` — not unit-tested, meant to be
+validated live.
+
+**Not yet validated live** — deliberately. Market was closed for the
+whole design/build; a real fill (let alone a real stop firing) can't be
+faked with a unit test. Plan: one small (1-contract) real paper order
+once the market opens, checking it actually fills and the loop picks it
+up correctly — same "test on real data" convention as every other
+component, just deferred to when real fill data can exist at all. Not run
+without checking in first — placing even a paper order is an
+outward-facing action.
 
 ## HITL Review Gate — design decision only, 2026-08-30
 

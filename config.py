@@ -2,7 +2,9 @@
 # SHARED CONFIG — credentials + strategy constants
 # Imported by every module so we don't duplicate keys/params.
 # ================================================================
+import datetime
 import os
+from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
 
@@ -88,3 +90,22 @@ MAX_POSITIONS = 6
 # natural ~1/3 three-way premium-selling split so it doesn't bind in the
 # common case, only when something unusual would concentrate exposure.
 MAX_EXPOSURE_PER_UNDERLYING_PCT = 0.35
+
+# ---------- EXECUTION AGENT ----------
+# Hard EOD liquidation time for short option positions (spec section 9 --
+# "all short option positions must be closed before expiration"). 15:45 ET
+# gives a 15-min buffer before the close, same convention as the sibling
+# alpacabot project's EOD_EXIT_TIME.
+PREMIUM_EOD_CLOSE_TIME = datetime.time(15, 45)
+
+# Directional exit time -- spec section 18, fixed at 2:30 PM ET regardless
+# of P&L. Not configurable; it's the thing V1 is testing (does the 9:40 AM
+# signal predict price movement through 2:30 PM), not a tunable knob.
+DIRECTIONAL_CLOSE_TIME = datetime.time(14, 30)
+
+# Monitoring loop poll interval, spec section 19-20 ("~every 1 minute").
+MONITOR_POLL_SECS = 60
+
+# Wall-clock timezone all exit-time comparisons are made in (market hours,
+# EOD/directional close times above are all ET).
+ET = ZoneInfo("America/New_York")

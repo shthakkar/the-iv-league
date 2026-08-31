@@ -84,11 +84,17 @@ a lower-strike put for protection); no protective leg in V1. Trade-off,
 accepted knowingly: buying power required per contract is now the full
 strike (versus just the spread width), so fewer contracts fit the same
 budget and capital utilization is lower — but risk is uncapped below the
-strike rather than structurally floored by a protective put, which matters
-because Alpaca has no broker-side stop-loss for options (confirmed via
-their OrderClass API spec: `bracket`/`oco`/`oto` are equity-only; options
-only support `simple`/`mleg`) — the §9 stop-loss is enforced entirely by the
-Execution Agent's polling loop, with no backstop under it if that loop
+strike rather than structurally floored by a protective put. A standalone
+`type: "stop"` order (`order_class: "simple"`) **is** supported for a
+single option leg and genuinely holds/fires server-side — confirmed both
+from Alpaca's own OrderType spec and from the sibling `alpacabot` project's
+real fill logs (`🛑 STOP FILLED @ 4.14` on an actual SPY option position) —
+so the §9 stop-loss can be a real standing order, not just a polling-loop
+check. What's still equity-only is bundling TP+SL atomically as child
+orders (`bracket`/`oco`/`oto` order classes); the Execution Agent submits
+the stop as its own standalone order instead (see `alpacabot/trade_manager.py`'s
+proven pattern) — the take-profit and EOD close still go through the
+polling loop, with no backstop under it if that loop
 lags or a move gaps through.
 
 ## 7. Capital Allocation

@@ -33,47 +33,37 @@ made": premium-selling switched from a defined-risk credit spread to a
 plain cash-secured put (spec §6), and the max-daily-loss hard limit (spec
 §23) was dropped for V1 as inert dead code with no position recycling.
 
-## Immediate next: Execution Agent — places the approved orders
+## Done, pending live validation: Execution Agent (Component 6)
 
-Once Risk Manager approves something:
-1. Place the order via the raw `alpaca-py` SDK (`TradingClient`), **not**
-   the MCP server — a deterministic script can't invoke an MCP tool
-   without building an MCP client from scratch, and the "must use
-   Alpaca's MCP server" requirement is already satisfied by the Analyst's
-   read-only usage (see PROGRESS.md's handoff design note). Premium-selling
-   is a plain single-leg CSP order now (spec §6 changed 2026-08-30, see
-   PROGRESS.md) — no multi-leg/`mleg` order needed for that side.
-2. Log the entry (ticker, contract, qty, price, timestamp, side) — spec
-   §27 data logging starts here, not bolted on later.
-3. Monitoring loop, ~every 1 minute (spec §19-20):
-   - Short puts: close at 50% TP, 3× SL, or EOD — whichever first (§9).
-   - Long options: close at 2:30 PM ET regardless of P&L, no TP/SL (§18).
-   This loop is plain Python — no LLM, no Claude Code invocation needed,
-   which also means it doesn't have to run inside a `claude -p` session
-   (see the launchd note below).
-4. Test on paper with 1 contract before trusting real position sizing.
+Built + unit-tested (TDD, off the sibling `alpacabot` project's proven
+live patterns — see `PROGRESS.md`'s Component 6 entry, and its correction
+to the earlier "no broker-side stop-loss for options" claim). What's
+left, in order:
 
-## Then: Orchestrator (Component 6) + EOD safety net
-
-- Ties the full daily timeline together (spec §3).
-- **The morning-trigger scaffolding already exists and is ready to
-  extend** (built this session, see PROGRESS.md): `prompts/morning_decision.md`
-  + `scripts/run_morning_trigger.sh` (9:41 ET, dispatches Analyst,
-  currently decision-only/no orders) and `scripts/run_news_prefetch.sh`
-  (9:30 ET, warms the news cache). Once Risk Manager + Execution exist,
-  extend the prompt to call them instead of stopping at the log file —
-  and loosen the `--disallowedTools` order-blocking list deliberately,
-  not by accident.
-- **launchd/pmset install is still pending a go-ahead** — this can
-  actually happen independently/anytime, since the decision-only prompt
-  is already safe to run unattended. Researched pattern (via alpacabot,
-  see PROGRESS.md): `pmset repeat wake` + a bridging caffeinate
-  LaunchAgent + per-script `caffeinate -w $PID`. Open question: whether
-  `-dimsu` survives a closed lid on this Mac — untested, verify for real
-  rather than assuming.
-- **EOD liquidation via the Alpaca CLI**, not the SDK/MCP — deliberately
-  a separate, dumb, unmissable safety net independent of whatever else
-  may be hung or broken.
+1. **Live-validate on paper, 1 contract, once the market is open** — a
+   real fill and a real stop firing can't be faked with a unit test.
+   Confirm before running: it places a genuine (paper) order. Check the
+   monitoring loop actually picks up the fill and the standing stop shows
+   up correctly in the account.
+2. Wire `execution_agent.run()` into `prompts/morning_decision.md` in
+   place of the current "log the Risk Manager decisions and stop" step —
+   loosen the `--disallowedTools` order-blocking list deliberately when
+   this happens, not by accident.
+3. **Orchestrator (spec §3)** — ties the full daily timeline together.
+   The morning-trigger scaffolding already exists and is ready to extend
+   (built earlier this session, see `PROGRESS.md`): `prompts/morning_decision.md`
+   + `scripts/run_morning_trigger.sh` (9:41 ET) and
+   `scripts/run_news_prefetch.sh` (9:30 ET, warms the news cache).
+4. **launchd/pmset install is still pending a go-ahead** — this can
+   actually happen independently/anytime, since the decision-only prompt
+   is already safe to run unattended. Researched pattern (via alpacabot,
+   see PROGRESS.md): `pmset repeat wake` + a bridging caffeinate
+   LaunchAgent + per-script `caffeinate -w $PID`. Open question: whether
+   `-dimsu` survives a closed lid on this Mac — untested, verify for real
+   rather than assuming.
+5. **EOD liquidation via the Alpaca CLI**, not the SDK/MCP — deliberately
+   a separate, dumb, unmissable safety net independent of whatever else
+   may be hung or broken.
 
 ## Deferred / not yet decided
 
