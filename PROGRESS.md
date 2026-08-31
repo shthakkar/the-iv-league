@@ -26,9 +26,19 @@ plan — see git log for the granular history.
     force-liquidation safety net, and (as of the Dashboard design, spec
     §29) the account-snapshot pull behind the Dashboard's data export
     (none of these wired in yet).
-- **MVP universe**: `config.py`'s `UNIVERSE` defaults to `[SPY, QQQ, NVDA,
-  TSLA]` (4, not the spec's 8) for faster iteration, but every ticker in the
-  spec's 8 has been tested via `UNIVERSE_OVERRIDE` and works.
+- **Universe bumped to the real 8, 2026-08-31**: `config.py`'s `UNIVERSE`
+  was `[SPY, QQQ, NVDA, TSLA]` (4, not the spec's 8) as a dev-speed
+  default — every ticker in the spec's 8 had already been tested via
+  `UNIVERSE_OVERRIDE` and worked, but the default itself was never bumped
+  before cron started firing live runs. Caught by the decision run itself
+  on its first live morning (flagged the mismatch in its own output), then
+  fixed same-day: default is now the real 8 (`SPY QQQ NVDA TSLA AAPL AMZN
+  MSFT META`), `UNIVERSE_OVERRIDE` still available for a one-off smaller
+  run. Verified: all 28 unit tests still pass, `config.UNIVERSE` reports
+  the 8, `prefetch_news.py` pulled real news for all 8 (previously only
+  the 4), `strategy_engine.py`'s ranking header now lists all 8 (still
+  zero candidates today — same greeks gap as before, now confirmed across
+  the full universe rather than just the 4).
 - **PREMIUM_SELL_COUNT = 3**, matching the spec's top-3 split (was
   temporarily 1 during early testing, corrected).
 - **News source**: Alpaca's own News API (`NewsClient`, Benzinga-sourced) —
@@ -69,6 +79,53 @@ plan — see git log for the granular history.
   step are still dropped from the Risk Manager design, independent of
   this correction — that call was about capital efficiency and buying
   power (spec §8), not about stop-loss reliability.
+- **Local Black-Scholes greeks fallback for 0DTE (`black_scholes.py`), 2026-08-31**:
+  Alpaca's own greeks/IV are structurally unavailable for 0DTE contracts
+  (see `SPEC.md` §4's "Changed 2026-08-31" note for the full root-cause
+  story). Rather than switch the whole strategy to 1DTE (considered and
+  rejected — a much bigger change: calendar logic, possible overnight
+  position persistence, re-tuned exit timing, and a real deviation from
+  what the spec's own title says the system is), built a local
+  Black-Scholes IV/delta solver instead — the actual root-cause fix, not a
+  workaround. Researched first (background web-research agent, sourced):
+  using real hours-to-close as T instead of literal zero is standard
+  practice (a QuantConnect user hit the identical symptom and fixed it the
+  same way); real caveats (vega collapse, whippy delta/gamma) concentrate
+  in deep OTM/ITM strikes as T→0, not the ATM/~15Δ region this project
+  targets. Built TDD (`tests/test_black_scholes.py`, 14 tests: put-call
+  parity, delta bounds, delta relationship, IV round-trip at both normal
+  and 0DTE-scale T, graceful `None` on implausible/arbitrage-violating
+  prices, T-floor behavior). Integrated into `strategy_engine.py`'s
+  `_fetch_liquid_chain()` as a fallback — Alpaca's own fields are used
+  when present (non-0DTE expirations, unaffected), local calc only kicks
+  in when they're null. Proof-of-concept validated against real live 0DTE
+  data before building: hand-solved IV/delta for a real SPY 0DTE quote
+  matched the *real* Alpaca-provided delta for the same strike one day
+  later almost exactly (0.2045 local vs. 0.2051 real 1DTE) — sanity
+  check confirmed by the research (delta is moneyness-dominated, not
+  time-dominated, at these horizons). New `config.RISK_FREE_RATE = 0.045`
+  constant (negligible effect at these T's, not pulled live). This is what
+  actually unblocked the account: strategy_engine.py went from "all 8
+  tickers skipped, zero candidates" to a full clean 8-ticker ranking with
+  real numbers the same session.
+- **Premium-selling per-name concentration cap removed, 2026-08-31**:
+  `MAX_EXPOSURE_PER_UNDERLYING_PCT` (0.35) was never spec-fixed (spec §8
+  says "roughly equal allocation... never force a trade merely to use all
+  available capital" — nothing about a per-name ceiling) and was actively
+  fighting `allocate_premium_positions()`'s own leftover-pooling pass:
+  pooling exists to rescue a candidate that couldn't afford its own equal
+  share, and the cap then re-blocked that same rescue once the pool was
+  big enough to help. Caught live: a real run rejected every single
+  premium-selling candidate (TSLA/META/SPY, all individually too
+  expensive for the $100k account's 35%-of-budget ceiling) purely on this
+  tension, not genuine unaffordability — confirmed by re-running the exact
+  same data without the cap, which approved a real position. Removed from
+  `risk_manager.py`'s `evaluate()` call; `allocate_premium_positions()`
+  still accepts the parameter (tested) if a cap is ever wanted again, it's
+  just not applied by the live path. Trade-off accepted knowingly: a
+  single name can now take a much larger share of the premium budget when
+  others are too expensive to use the leftover (seen same day: TSLA took
+  $35,750, ~38% of the $95k budget, in one name).
 - **Daily loss limit (spec §23) dropped for V1**: decided 2026-08-30. Its
   "once hit, no new positions" phrasing is a circuit breaker for a
   *second wave* of trades after an early loss — but V1 never has one
@@ -278,7 +335,7 @@ finding live.
 **Not yet built**: turning an APPROVE into an actual order (Execution
 Agent, next).
 
-## Component 6: Execution Agent — 🟡 BUILT + unit tested, NOT yet live-validated
+## Component 6: Execution Agent — ✅ LIVE-VALIDATED, 2026-08-31 (see full trading-day entry below)
 
 Files: `execution_agent.py`, `tests/test_execution_agent.py` (11 unit
 tests, TDD, same stdlib `unittest` convention as Risk Manager).
@@ -331,14 +388,71 @@ entry/tick/main-loop I/O are un-mocked thin SDK calls, same split as
 Risk Manager's `get_account_snapshot()` — not unit-tested, meant to be
 validated live.
 
-**Not yet validated live** — deliberately. Market was closed for the
-whole design/build; a real fill (let alone a real stop firing) can't be
-faked with a unit test. Plan: one small (1-contract) real paper order
-once the market opens, checking it actually fills and the loop picks it
-up correctly — same "test on real data" convention as every other
-component, just deferred to when real fill data can exist at all. Not run
-without checking in first — placing even a paper order is an
-outward-facing action.
+**Live-validated 2026-08-31** — see the full "First live trading day"
+entry below for the complete run (real fills, a real stop order, two real
+take-profit exits, a real time-based exit, and a clean process exit).
+
+**Update, 2026-08-31 (before market open)**: user explicitly decided to
+skip the isolated 1-contract validation run and wire straight into the
+full automated pipeline for today's real morning run instead — paper
+account only, user monitoring manually, so a failed live-validate-first
+step buys little extra safety here. Wired in as follows:
+
+- **`scripts/run_morning_trigger.sh`** now has a second stage, plain bash,
+  after `claude -p` exits: reads `logs/cache/risk-decisions-<date>.json`
+  and — mechanically, no LLM judgment — launches `execution_agent.py`
+  detached (`nohup ... &`, PID written to
+  `logs/execution-agent-<date>.pid`) only if at least one decision has
+  `approved: true`. This is the actual "loosen `--disallowedTools`
+  deliberately" moment predicted in `NEXTSTEPS.md` — except the loosening
+  turned out to be moving execution out of the LLM's tool-calling loop
+  entirely rather than adding order-placing MCP tools to its allowlist,
+  which keeps spec §30's LLM/deterministic split intact:
+  `run_morning_trigger.sh`'s own header comment explains the reasoning.
+  `set -e` means a non-zero exit from `claude -p` aborts before this stage
+  ever runs — fails closed, never executes off a stale/partial decisions
+  file.
+- **`prompts/morning_decision.md`** updated to state explicitly that the
+  LLM session writes the decisions file and stops — it never reads it back
+  to decide whether to execute, and never invokes `execution_agent.py`
+  itself. The old "NO ORDERS PLACED" closing line is gone (no longer true
+  when a real order gets placed downstream); replaced with a pointer to
+  where the actual outcome shows up.
+- **Whole-day `caffeinate` gap closed**: the shared morning wake-bridge
+  (`com.alpacabot.morning-caffeinate`, see the scheduling entry below)
+  only covers a 30-min window (6:30–7:00 AM PT), nowhere near
+  `PREMIUM_EOD_CLOSE_TIME` (3:45 PM ET = 12:45 PM PT). Fixed the same way
+  alpacabot's `run_bot.sh` does it: `run_morning_trigger.sh` ties a
+  `caffeinate -dimsu -w $EXEC_PID` to `execution_agent.py`'s own PID right
+  after launching it — holds the Mac awake for exactly as long as it's
+  actually monitoring positions, releases itself automatically on exit.
+- **Heartbeat logging added** to `execution_agent.py`'s `run()` loop (3
+  `print()` calls: on open, each poll tick, on all-closed) — stdout,
+  captured into `logs/<date>-execution-run.out` by the trigger script's
+  redirect. Pure addition, no logic changed; not covered by the unit
+  tests (which test the pure decision functions, not `run()`'s I/O) —
+  reran all 28 Execution Agent + Risk Manager tests after adding it,
+  still green. Added because the user's plan is to monitor today's run
+  manually and the loop previously had no visible sign of life between
+  entry/exit log lines.
+- **EOD force-liquidation safety net built** (`NEXTSTEPS.md` item 5,
+  previously undone): `scripts/eod_force_liquidate.sh`, deliberately
+  separate from `execution_agent.py` and using the **Alpaca CLI** (not the
+  SDK/MCP) per the spec's "use all three surfaces" intent and so it shares
+  no code path with whatever else might be hung or broken. Lists open
+  positions (`alpaca position list --csv`); no-ops if empty; otherwise logs
+  a warning with the actual position list and force-liquidates via
+  `alpaca position close-all --cancel-orders` (cancels standing orders —
+  e.g. a stop — before liquidating, one call). Ran it for real against the
+  live paper account this session (zero open positions right now, so it
+  hit the no-op path) — confirmed the CLI auth/connectivity work end to
+  end, not just that the script parses. Stated limitation directly in its
+  own header: this only helps if the Mac is actually awake at fire time:
+  it's a net for "the loop is stuck/wrong", not for "the whole machine
+  went to sleep".
+- **Scheduling**: added to the same `crontab` as yesterday's two entries —
+  `scripts/eod_force_liquidate.sh` at 12:55 PM PT (3:55 PM ET, 10 min
+  after `PREMIUM_EOD_CLOSE_TIME`), Mon–Fri. Verified via `crontab -l`.
 
 ## HITL Review Gate — design decision only, 2026-08-30
 
@@ -357,6 +471,91 @@ Approval → Production pipeline (§27), unchanged.
 reviewer edits? a Claude Code session?) and the handoff contract between
 the Strategist's output and whatever the reviewer sees — deferred to
 whenever the Strategist Agent itself gets built (see NEXTSTEPS.md).
+
+## First live trading day — 2026-08-31 (paper account)
+
+The system's first full run against real live-market data, start to
+finish, with real fills — not a validation test, an actual trading
+decision the user reviewed and approved. Run **manually**, not through the
+automated cron trigger: the 6:30/6:41 AM cron jobs fired but hit the 0DTE
+greeks gap (see below) and produced zero candidates before the fix
+existed; once `black_scholes.py` was built and integrated mid-morning,
+the user explicitly chose to skip the planned isolated 1-contract
+validation step and run the full pipeline by hand instead (paper account,
+manually monitored) rather than wait for the next scheduled cron fire.
+
+**Pipeline, run by hand, each step's output shown to the user before
+proceeding**:
+1. `strategy_engine.py` — real 8-ticker ranking, zero skips (the local
+   Black-Scholes fallback's first real production use).
+2. 5 `analyst` subagents dispatched in parallel for the directional
+   candidates (SPY, META, MSFT, NVDA, AAPL) — real reads against real
+   first-10-minute price action and real news. Only SPY cleared the bar
+   (BEARISH, confidence 58 — Chicago PMI miss, US-Iran tension headlines,
+   hawkish Fed commentary); the other 4 came back UNDECIDED, each with a
+   real, specific two-sided-price-action reason, not a generic hedge.
+3. `directional_selection.py` — selected SPY, deterministically.
+4. `risk_manager.py` — run **twice**, a few minutes apart, against live
+   data: the top-3 IV-skew names shifted both times (TSLA/META/QQQ →
+   TSLA/META/SPY → TSLA/QQQ/AMZN → TSLA/META/AAPL across four consecutive
+   fetches within ~10 minutes) — real, fast-moving 0DTE IV, not a bug
+   (matches the earlier research: delta/gamma get genuinely whippy
+   intraday). The concentration-cap removal (see "Architecture decisions
+   made" above) was discovered and fixed *during* this step, live,
+   because the capped version rejected every premium-selling candidate on
+   a real run.
+5. **Final decisions, shown to the user, explicit go-ahead given**:
+   - SELL PUT (CSP) `TSLA260831P00357500` x1 — $35,750
+   - SELL PUT (CSP) `AAPL260831P00312500` x1 — $31,250
+   - BUY PUT (directional) `SPY260831P00765000` x44 — $4,972
+6. `execution_agent.py` launched detached (`nohup` + PID-tied `caffeinate`,
+   same pattern as `run_morning_trigger.sh`'s automated path) — all 3
+   orders placed and filled for real, both CSP stop orders confirmed
+   standing at Alpaca (TSLA stop $1.50 = 3× the $0.50 real fill, AAPL
+   stop $0.81 = 3× the $0.27 real fill — both computed from the actual
+   fill, not the pre-trade estimate, confirming that design point live for
+   the first time).
+
+**Full outcome, all 3 positions closed by end of day**:
+
+| Symbol | Side | Entry | Exit | Exit reason | Result |
+|---|---|---|---|---|---|
+| TSLA260831P00357500 | SHORT (CSP) | $0.50 | $0.28 | TP (11:44 ET) | **+$22** |
+| AAPL260831P00312500 | SHORT (CSP) | $0.27 | $0.16 | TP (10:51 ET) | **+$11** |
+| SPY260831P00765000 (x44) | LONG (directional) | $1.04 | $0.14 | TIME (14:30:58 ET, exact) | **-$3,960** |
+
+**Net: -$3,927.** Both premium-selling CSPs hit take-profit as designed —
+a real, if small, positive signal for that side's mechanics. The
+directional SPY put lost most of its value: the BEARISH thesis (macro
+risk-off catalysts, gap-down continuing into the window) didn't hold up
+through the session, and since directional positions have no stop-loss by
+design (spec §18 — max loss is already capped at the premium paid), it
+rode the full adverse move to the 2:30 PM time-exit with no early out.
+Nothing here indicates a code problem — this is a normal single-day
+outcome for a system that just had its first live trades, not evidence
+either strategy side is miscalibrated on one sample.
+
+**Everything downstream also confirmed live, for the first time**:
+- The `execution_agent.py` process exited cleanly on its own once both
+  positions were closed (`0 premium + 0 directional... All positions
+  closed. Exiting.`) — no lingering process, no manual cleanup needed.
+- `eod_force_liquidate.sh` fired at 12:55 PM PT, found zero open
+  positions, logged a clean no-op — the full safety-net chain worked
+  end-to-end on a day it wasn't actually needed.
+- The backup cron entries (6:35/6:50 AM) correctly no-op'd via their lock
+  files once the primaries had already run — first real confirmation the
+  cron-race fix's backup mechanism doesn't cause a double-run on a day the
+  primary succeeds.
+
+**Known rough edges surfaced, not yet fixed**: the premium-side vs.
+directional-side rankings come from two independently-timed re-fetches
+(the Analyst-driven directional selection happens minutes before Risk
+Manager's own internal re-ranking for premium sizing), so the same ticker
+can appear as a candidate on both sides across a few minutes of live 0DTE
+drift — didn't cause a double-order today only because the premium side
+happened to reject that ticker anyway. Worth hardening (a single ranking
+snapshot shared by both sides) before this runs unattended without a
+human reviewing each step.
 
 ## Dashboard — 🟡 SCAFFOLDED, sample data only, 2026-08-30
 
@@ -427,16 +626,28 @@ eventual orchestrator:
   meant to fire at 9:30 ET so it's warm before the 9:41 decision run;
   `.claude/agents/analyst.md` updated to read this cache first and only
   fall back to a live `get_news` call if its ticker's bucket is empty.
-- Researched (via a background agent) how the sibling `alpacabot` project
-  handles unattended scheduling: `pmset repeat wake` + a bridging
-  caffeinate-only LaunchAgent (`StartCalendarInterval` as 5 weekday dicts,
-  no native Mon–Fri shorthand in launchd XML) + a per-process
-  `caffeinate -w $PID` tied to the run script's own lifetime. Plan is to
-  adapt this for our two triggers, but **nothing is installed yet** —
-  `launchctl load`/`pmset` changes are pending explicit go-ahead (system
-  state, not just repo files). Open question: whether `-dimsu` actually
-  holds through a closed lid on this Mac without external power/display —
-  untested in alpacabot itself either, so don't assume it works.
+- **Scheduling installed, 2026-08-30**: re-checked alpacabot's actual live
+  setup (not just the earlier researched summary) before installing
+  anything — it turns out actual bot start/stop is fired by plain
+  `crontab`, not launchd; launchd's only job is the wake-bridge
+  (`~/Library/LaunchAgents/com.alpacabot.morning-caffeinate.plist`, fires
+  `caffeinate -dimsu -t 1800` at 6:30 AM PT Mon–Fri via a `pmset repeat
+  wake at 6:30AM` weekday schedule, confirmed live via `pmset -g sched`
+  and `launchctl list`). That 6:30–7:00 AM PT window already covers both
+  of ivleague's trigger times (9:30/9:41 AM ET = 6:30/6:41 AM PT, fixed
+  3h offset through November since both zones DST-shift together), so
+  nothing new went into pmset/launchd — just two additive `crontab` lines
+  (`scripts/run_news_prefetch.sh` @ 6:30, `scripts/run_morning_trigger.sh`
+  @ 6:41), appended alongside the existing schwabbot entries, no `sudo`,
+  shared wake infra untouched. Verified via `crontab -l` after install.
+  Both scripts' header comments corrected from "fired by launchd" (stale)
+  to "fired by cron". The "does `-dimsu` survive a closed lid" open
+  question is now indirectly de-risked — alpacabot's own `logs/cron.log`
+  shows its 6:55 AM cron job firing every weekday since mid-July with zero
+  misses, which requires the wake mechanism to have worked — but whether
+  the lid was actually closed those mornings wasn't checked, so this is
+  suggestive, not confirmed. Genuinely verify once ivleague's own
+  `logs/cron.log` has a few real days in it.
 
 ## Infra notes / gotchas (read before continuing)
 
