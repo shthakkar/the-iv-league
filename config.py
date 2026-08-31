@@ -80,24 +80,34 @@ MAX_DIRECTIONAL_SELECTED = 3
 EXPIRATION_OVERRIDE = os.environ.get("EXPIRATION_OVERRIDE", "")
 
 # ---------- RISK MANAGER / CAPITAL ALLOCATION ----------
-# Spec section 7's 95%/5% split, applied dynamically to the account's real
-# options_buying_power (not the historical spec's hardcoded $100k account) —
-# decided 2026-08-30, see PROGRESS.md's Risk Manager entry for why
-# options_buying_power specifically (margin doesn't extend to options on
-# this account, confirmed via Alpaca's account-field docs).
-PREMIUM_SELL_ALLOCATION_PCT = 0.95
-
-# Directional side used to be a flat 5% of balance regardless of how many
-# candidates actually cleared MIN_DIRECTIONAL_CONFIDENCE that day (spec
-# section 7's literal 95/5 split) -- but that risks the same dollar amount
-# whether 1 name or 3 names made the cut, so a single-name day (breadth/
-# conviction was low -- exactly what happened 2026-08-31, where only one
-# ticker cleared the confidence bar) got exposed for the SAME capital as a
-# full 3-name day. Replaced 2026-08-31 with a per-selected-stock formula,
-# an explicit human/product decision (not a Strategist Agent proposal):
-# 1% of balance per selected directional candidate, capped at 3% total.
-# 1 selected -> 1%, 2 -> 2%, 3 (spec section 14's max) -> 3% -- a deliberate
-# reduction from the old flat 5% ceiling. See risk_manager.compute_budgets().
+# Spec section 7's 95%/5% split was originally two independent fixed
+# percentages, applied dynamically to the account's real options_buying_
+# power (not the historical spec's hardcoded $100k account) -- decided
+# 2026-08-30, see PROGRESS.md's Risk Manager entry for why options_buying_
+# power specifically (margin doesn't extend to options on this account,
+# confirmed via Alpaca's account-field docs).
+#
+# Both halves changed 2026-08-31, both explicit human/product decisions
+# (not Strategist Agent proposals):
+#
+# 1. Directional side used to be a flat 5% of balance regardless of how many
+#    candidates actually cleared MIN_DIRECTIONAL_CONFIDENCE that day -- but
+#    that risks the same dollar amount whether 1 name or 3 names made the
+#    cut, so a single-name day (breadth/conviction was low -- exactly what
+#    happened 2026-08-31, where only one ticker cleared the confidence bar)
+#    got exposed for the SAME capital as a full 3-name day. Replaced with a
+#    per-selected-stock formula: 1% of balance per selected directional
+#    candidate, capped at 3% total. 1 selected -> 1%, 2 -> 2%, 3 (spec
+#    section 14's max) -> 3% -- a deliberate reduction from the old flat 5%
+#    ceiling.
+# 2. Premium side used to be a fixed 95% independent of the directional
+#    side, which meant 2-4% of the account sat permanently idle (100% -
+#    95% premium - up-to-3% directional never quite closed the gap once
+#    directional stopped being a flat 5%). Made complementary instead --
+#    PREMIUM_SELL_ALLOCATION_PCT is gone; premium_sell_budget is now
+#    `1.0 - directional_pct` of balance, so the two sides always sum to the
+#    full available balance. 1 directional selected -> 99% premium, 2 ->
+#    98%, 3 -> 97%, 0 -> 100%. See risk_manager.compute_budgets().
 DIRECTIONAL_PCT_PER_STOCK = 0.01  # 1% of balance per selected directional candidate
 DIRECTIONAL_MAX_PCT = 0.03        # cap on total directional allocation regardless of count
 

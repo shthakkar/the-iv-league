@@ -106,14 +106,21 @@ def compute_budgets(snapshot: AccountSnapshot, num_directional_selected: int) ->
     DIRECTIONAL_MAX_PCT -- see config.py's comment for the 2026-08-31 rationale).
     num_directional_selected is the count from the day's selection, not the
     count that ends up APPROVED after sizing/rejection -- the budget reflects
-    conviction/breadth at selection time."""
+    conviction/breadth at selection time.
+
+    Premium budget is the COMPLEMENT of the directional percentage (1.0 -
+    directional_pct), not an independent fixed percentage -- the two always
+    sum to the full available balance, so 2-4% of the account never sits
+    idle just because fewer directional candidates cleared the bar (also
+    2026-08-31, see config.py's comment)."""
     balance = snapshot.available_balance
     directional_pct = min(
         config.DIRECTIONAL_PCT_PER_STOCK * num_directional_selected,
         config.DIRECTIONAL_MAX_PCT,
     )
+    premium_pct = 1.0 - directional_pct
     return Budgets(
-        premium_sell_budget=balance * config.PREMIUM_SELL_ALLOCATION_PCT,
+        premium_sell_budget=balance * premium_pct,
         directional_budget=balance * directional_pct,
     )
 

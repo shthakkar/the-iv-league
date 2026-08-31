@@ -692,6 +692,20 @@ human attribution recorded in `STRATEGY_CHANGELOG.md`, which
 `strategist.md` now reads as an input on every run so it doesn't
 re-propose something already decided.
 
+**Same-day addendum**: user asked whether the directional 1%/2%/3%
+formula scales with the account's real (live) balance — confirmed yes,
+`compute_budgets()` already used `AccountSnapshot.available_balance`
+(live `get_account()`, not a hardcoded $100k) before this cycle even
+started. Follow-up ask: should premium's 95% also flex with how many
+directional stocks were selected, rather than sitting fixed while
+directional varies? Yes — `config.PREMIUM_SELL_ALLOCATION_PCT` (fixed
+95%) removed; `compute_budgets()` now computes premium as the complement
+of the directional percentage (`1.0 - directional_pct`), so the two sides
+always sum to the full available balance instead of leaving 2-4% idle.
+0 directional selected -> 100% premium, 1 -> 99%, 2 -> 98%, 3 -> 97%.
+TDD, 9 tests in `ComputeBudgetsTests` including an explicit sum-to-100%
+invariant check. 66/66 tests pass across the full suite.
+
 **Not built in this cycle**: spec §26-27's formal Backtest → Compare
 against V1 → Paper Trading → Risk Approval → Production pipeline — an
 approved change here goes straight into what cron runs tomorrow, no

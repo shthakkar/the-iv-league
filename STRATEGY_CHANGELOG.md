@@ -76,3 +76,26 @@ the Strategist Agent itself (n=1 day, no statistical basis) — the only
 numeric change (directional allocation formula) came from the human, not
 the AI. Revisit `MIN_DIRECTIONAL_CONFIDENCE`, `TARGET_PUT_DELTA`, and
 similar tunables once there's more than one day of trade history.
+
+### Same-day addendum: premium allocation made complementary (human)
+
+Follow-up human suggestion, same review cycle: the fixed 95% premium
+allocation left 2-4% of the account permanently idle once directional
+stopped being a flat 5% (95% premium + up to 3% directional never quite
+summed to 100%). Changed `compute_budgets()` so premium is the
+**complement** of the directional percentage — `premium_pct = 1.0 -
+directional_pct` — rather than an independent fixed constant.
+`config.PREMIUM_SELL_ALLOCATION_PCT` removed entirely.
+
+| Directional selected | Directional % | Premium % (before → after) |
+|---|---|---|
+| 0 | 0% | 95% → **100%** |
+| 1 | 1% | 95% → **99%** |
+| 2 | 2% | 95% → **98%** |
+| 3 | 3% | 95% → **97%** |
+
+Premium + directional now always sum to exactly the full available
+balance (`options_buying_power`, falling back to `cash`) — no gap.
+TDD (9 tests in `ComputeBudgetsTests`, including an explicit
+`premium_plus_directional_always_sums_to_full_balance` invariant check
+across 0-4 selected). 66/66 tests pass across the full suite.

@@ -32,40 +32,54 @@ def _ranked(ticker, atm_strike, atm_call_symbol, atm_call_ask, atm_put_symbol, a
 
 
 class ComputeBudgetsTests(unittest.TestCase):
-    def test_splits_95_pct_premium_off_options_buying_power(self):
-        # Premium side is unaffected by num_directional_selected.
+    def test_premium_gets_100_pct_when_zero_directional_selected(self):
+        # Premium is complementary to directional, not a fixed 95% -- with
+        # nothing selected on the directional side, premium gets the whole
+        # balance rather than always leaving an idle 5%.
+        snapshot = rm.AccountSnapshot(cash=100_000, options_buying_power=100_000, equity=100_000)
+        budgets = rm.compute_budgets(snapshot, num_directional_selected=0)
+        self.assertAlmostEqual(budgets.premium_sell_budget, 100_000)
+        self.assertAlmostEqual(budgets.directional_budget, 0)
+
+    def test_premium_gets_99_pct_when_one_directional_selected(self):
+        snapshot = rm.AccountSnapshot(cash=100_000, options_buying_power=100_000, equity=100_000)
+        budgets = rm.compute_budgets(snapshot, num_directional_selected=1)
+        self.assertAlmostEqual(budgets.premium_sell_budget, 99_000)
+        self.assertAlmostEqual(budgets.directional_budget, 1_000)
+
+    def test_premium_gets_98_pct_when_two_directional_selected(self):
+        snapshot = rm.AccountSnapshot(cash=100_000, options_buying_power=100_000, equity=100_000)
+        budgets = rm.compute_budgets(snapshot, num_directional_selected=2)
+        self.assertAlmostEqual(budgets.premium_sell_budget, 98_000)
+        self.assertAlmostEqual(budgets.directional_budget, 2_000)
+
+    def test_premium_gets_97_pct_when_three_directional_selected(self):
         snapshot = rm.AccountSnapshot(cash=100_000, options_buying_power=100_000, equity=100_000)
         budgets = rm.compute_budgets(snapshot, num_directional_selected=3)
-        self.assertAlmostEqual(budgets.premium_sell_budget, 95_000)
+        self.assertAlmostEqual(budgets.premium_sell_budget, 97_000)
+        self.assertAlmostEqual(budgets.directional_budget, 3_000)  # at the 3% cap
+
+    def test_directional_budget_caps_at_3_pct_beyond_three_selected_stocks(self):
+        # Hypothetical 4+ selected (MAX_DIRECTIONAL_SELECTED is spec-fixed at 3,
+        # but the formula itself must still cap rather than exceed it) --
+        # premium correspondingly stays at 97%, not dropping to 96%.
+        snapshot = rm.AccountSnapshot(cash=100_000, options_buying_power=100_000, equity=100_000)
+        budgets = rm.compute_budgets(snapshot, num_directional_selected=4)
+        self.assertAlmostEqual(budgets.directional_budget, 3_000)  # still capped at 3%, not 4%
+        self.assertAlmostEqual(budgets.premium_sell_budget, 97_000)
+
+    def test_premium_plus_directional_always_sums_to_full_balance(self):
+        snapshot = rm.AccountSnapshot(cash=100_000, options_buying_power=100_000, equity=100_000)
+        for n in (0, 1, 2, 3, 4):
+            budgets = rm.compute_budgets(snapshot, num_directional_selected=n)
+            self.assertAlmostEqual(budgets.premium_sell_budget + budgets.directional_budget, 100_000)
 
     def test_falls_back_to_cash_when_options_buying_power_is_zero(self):
         snapshot = rm.AccountSnapshot(cash=50_000, options_buying_power=0, equity=50_000)
         budgets = rm.compute_budgets(snapshot, num_directional_selected=3)
-        self.assertAlmostEqual(budgets.premium_sell_budget, 47_500)
-        # 3 selected -> 1% * 3 = 3%, under the 3% cap -> exactly at the cap.
+        # 3 selected -> directional 3% (at the cap), premium the complementary 97%.
         self.assertAlmostEqual(budgets.directional_budget, 1_500)
-
-    def test_directional_budget_is_1_pct_per_selected_stock(self):
-        snapshot = rm.AccountSnapshot(cash=100_000, options_buying_power=100_000, equity=100_000)
-        budgets = rm.compute_budgets(snapshot, num_directional_selected=1)
-        self.assertAlmostEqual(budgets.directional_budget, 1_000)  # 1% of 100k
-
-    def test_directional_budget_is_2_pct_for_two_selected_stocks(self):
-        snapshot = rm.AccountSnapshot(cash=100_000, options_buying_power=100_000, equity=100_000)
-        budgets = rm.compute_budgets(snapshot, num_directional_selected=2)
-        self.assertAlmostEqual(budgets.directional_budget, 2_000)  # 2% of 100k
-
-    def test_directional_budget_is_3_pct_for_three_selected_stocks(self):
-        snapshot = rm.AccountSnapshot(cash=100_000, options_buying_power=100_000, equity=100_000)
-        budgets = rm.compute_budgets(snapshot, num_directional_selected=3)
-        self.assertAlmostEqual(budgets.directional_budget, 3_000)  # 3% of 100k, at the cap
-
-    def test_directional_budget_caps_at_3_pct_beyond_three_selected_stocks(self):
-        # Hypothetical 4+ selected (MAX_DIRECTIONAL_SELECTED is spec-fixed at 3,
-        # but the formula itself must still cap rather than exceed it).
-        snapshot = rm.AccountSnapshot(cash=100_000, options_buying_power=100_000, equity=100_000)
-        budgets = rm.compute_budgets(snapshot, num_directional_selected=4)
-        self.assertAlmostEqual(budgets.directional_budget, 3_000)  # still capped at 3%, not 4%
+        self.assertAlmostEqual(budgets.premium_sell_budget, 48_500)
 
 
 class AllocatePremiumPositionsTests(unittest.TestCase):
@@ -250,8 +264,9 @@ class EvaluateTests(unittest.TestCase):
 
         result = rm.evaluate(premium_ranked, directional_lookup, directional_selected, snapshot=snapshot)
 
-        self.assertAlmostEqual(result.budgets.premium_sell_budget, 95_000)
-        # 1 directional candidate selected -> 1% of balance (formula, not the old flat 5%).
+        # 1 directional candidate selected -> directional 1%, premium the
+        # complementary 99% (not a fixed 95%/flat 5% split anymore).
+        self.assertAlmostEqual(result.budgets.premium_sell_budget, 99_000)
         self.assertAlmostEqual(result.budgets.directional_budget, 1_000)
         self.assertEqual(len(result.premium_decisions), 1)
         self.assertTrue(result.premium_decisions[0].approved)
@@ -266,7 +281,8 @@ class EvaluateTests(unittest.TestCase):
         )) as mock_snapshot:
             result = rm.evaluate([], {}, [])
             mock_snapshot.assert_called_once()
-            self.assertAlmostEqual(result.budgets.premium_sell_budget, 95_000)
+            # Zero directional candidates -> premium gets the full 100%.
+            self.assertAlmostEqual(result.budgets.premium_sell_budget, 100_000)
 
     def test_generated_at_is_an_iso_timestamp_included_in_asdict(self):
         import dataclasses
