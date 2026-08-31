@@ -122,6 +122,22 @@ Premium selling budget ≈ $95,000. Directional option budget ≈ $5,000 —
 this is the maximum total premium spent on directional options, NOT $5,000
 per position.
 
+**Changed 2026-08-31**: both percentages made dynamic, both explicit
+human/product decisions (not Strategist Agent proposals — see
+`STRATEGY_CHANGELOG.md`). Directional is no longer a flat 5% regardless of
+how many candidates were actually selected that day — it's **1% of
+balance per selected directional candidate, capped at 3% total** (1
+selected → 1%, 2 → 2%, 3 → 3%), so a low-conviction/low-breadth day risks
+proportionally less. Premium is no longer an independent fixed 95% either
+— it's the **complement** of whatever directional took (100% - directional
+%), so the two always sum to the full available balance instead of a
+fixed split leaving 2-4% permanently idle: 0 directional selected → 100%
+premium, 1 → 99%, 2 → 98%, 3 → 97%. Both computed off the account's real
+live balance (`options_buying_power`, falling back to `cash`), not the
+hardcoded $100k above — see PROGRESS.md's Risk Manager entry. Directional
+option budget is still a total across whatever's selected, not per
+position, as originally specified.
+
 ## 8. Premium-Selling Position Allocation
 
 Target roughly equal allocation across the top 3: $95,000 / 3 ≈ $31,667. The
@@ -250,6 +266,15 @@ and directional performance (Analyst prediction/confidence, news/event
 category, first-10-min movement, call vs put, premium, entry/exit price,
 P/L).
 
+**Changed 2026-08-31 (built, see PROGRESS.md's Component 7 entry)**: V1
+scope narrowed for a single trading day of history (n=1) — post-mortem
+(what went well / what could be better, evidence-cited) + an
+inputs-completeness audit + a live end-of-day news/price re-check, plus
+qualitative process-fix proposals only. Explicitly forbidden from
+proposing numeric parameter tuning (this section's "is 15Δ optimal"-style
+questions, §25) from a single day's sample — no statistical basis yet.
+Built as a `strategist` subagent, manually invoked (no cron).
+
 ## 25. Strategist Questions
 
 Is 15Δ optimal? 10Δ or 20Δ better? Is IV skew actually predictive? Which
@@ -275,12 +300,34 @@ HITL judges whether the *idea* is worth testing at all; the Risk Manager
 Strategist has no authority to advance its own proposals past this point —
 mirrors the Analyst's no-execution-authority rule (§12).
 
+**Changed 2026-08-31 (built, see PROGRESS.md's Component 7 entry)**: review
+happens interactively in a Claude Code chat session, not a dedicated
+review surface — a published Artifact with comments and a local
+HTML-page-plus-server were both considered and dropped during design in
+favor of just reviewing and implementing in-session (simpler, no new
+always-on process). Every accepted proposal from the first review cycle
+was implemented directly (see below, §27's note on the pipeline) — there
+is no separate machine-readable APPROVE/REJECT record beyond the
+conversation itself and `STRATEGY_CHANGELOG.md`'s dated summary.
+
 ## 27. Strategy Evolution
 
 Strategist Agent does **not** directly modify production strategy:
 Trading Results → Strategist Agent → Proposed Strategy Change → HITL
 Review (§26) → Backtest → Compare against V1 → Paper Trading → Risk
 Approval → Production. Every strategy version tracked (V1.0, V1.1, ...).
+
+**Changed 2026-08-31**: the Backtest → Compare against V1 → Paper Trading
+→ Risk Approval → Production pipeline is **not built** — none of that
+infrastructure exists yet (no backtester at all). V1's actual pipeline is
+shorter: Strategist proposal → human review (§26, interactive) → approved
+changes implemented directly against what cron runs next, on the paper
+account, with a human reviewing every proposal first. Accepted trade-off
+for now (see `STRATEGY_CHANGELOG.md`'s 2026-08-31 entry) — revisit once
+this needs to run with less human oversight per cycle, or once there's
+enough trade history to make backtesting worthwhile. No version numbers
+(V1.0, V1.1, ...) are tracked yet either — changes are tracked by
+`STRATEGY_CHANGELOG.md` entry + git commit instead.
 Never allow the system to silently change live trading rules.
 
 ## 28. Data Logging
