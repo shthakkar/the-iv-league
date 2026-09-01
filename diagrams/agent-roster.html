@@ -315,7 +315,7 @@
     <span class="sep">·</span>
     <span><span class="dot-h">●</span> 1 HUMAN</span>
     <span class="sep">·</span>
-    <span>2 BUILT · 3 NOT STARTED · 1 PLANNED</span>
+    <span>6 BUILT</span>
   </div>
 
   <div class="filter-bar" role="group" aria-label="Filter agents by type">
@@ -380,7 +380,7 @@
       <p class="desc">Final approve/reject gate before any order — checks buying power, exposure, and daily loss limits. Can override the Analyst.</p>
       <div class="meta-row">
         <span class="when">9:40 ET · continuous</span>
-        <span class="status not-started">NOT STARTED</span>
+        <span class="status built">BUILT</span>
       </div>
       <div class="chips">
         <span class="chip">plain Python</span>
@@ -398,7 +398,7 @@
       <p class="desc">Polls open positions roughly every minute; enforces exit rules — 50% TP / 3&times; SL / EOD for short puts, hard 2:30&nbsp;ET close for longs.</p>
       <div class="meta-row">
         <span class="when">~every 1 min, market hrs</span>
-        <span class="status not-started">NOT STARTED</span>
+        <span class="status built">BUILT</span>
       </div>
       <div class="chips">
         <span class="chip">plain Python</span>
@@ -413,10 +413,10 @@
       </div>
       <h2>Strategist Agent</h2>
       <p class="question">&ldquo;What did we learn, and what should we test next?&rdquo;</p>
-      <p class="desc">Mines the day's trade logs for what to test next. Proposals move through backtest → paper trading → risk approval before touching production.</p>
+      <p class="desc">Mines the day's trade logs for what to test next — post-mortem, inputs audit, live EOD re-check, then proposals. V1 (n=1 day): process-fix proposals only, no numeric tuning yet.</p>
       <div class="meta-row">
         <span class="when">post-close (EOD)</span>
-        <span class="status planned">PLANNED</span>
+        <span class="status built">BUILT</span>
       </div>
       <div class="chips">
         <span class="chip">Claude</span>
@@ -431,10 +431,10 @@
       </div>
       <h2>HITL Review</h2>
       <p class="question">&ldquo;Is this proposed change worth testing?&rdquo;</p>
-      <p class="desc">Approves or rejects the Strategist's proposed change before any backtest work starts. Reject → discarded, logged. Approve → enters Backtest → Paper Trading → Risk Approval, unchanged.</p>
+      <p class="desc">Approves or rejects the Strategist's proposed change, interactively in a Claude Code session. Reject → discarded, logged. Approve → implemented directly for the next run (V1 skips the formal Backtest/Paper/Risk-Approval pipeline).</p>
       <div class="meta-row">
         <span class="when">post-close · per proposal</span>
-        <span class="status not-started">NOT STARTED</span>
+        <span class="status built">BUILT</span>
       </div>
       <div class="chips">
         <span class="chip">manual review</span>
