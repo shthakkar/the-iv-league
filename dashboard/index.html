@@ -3,209 +3,318 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>0DTE Dashboard</title>
+<title>The IV League — Dashboard</title>
+<link rel="icon" href="assets/iv_league_crest.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
 <style>
   :root{
-    --bg:#0e0f0d;
-    --panel-solid:#161810;
-    --border:#2a2d24;
-    --border-soft:#20221b;
-    --text:#e9e9e1;
-    --text-dim:#8d9186;
-    --text-faint:#5c5f56;
-    --judgment:#e8a33d;
-    --deterministic:#4fd1c5;
-    --human:#b9a6e8;
-    --good:#6fcf97;
-    --bad:#e8746a;
+    /* Brand: navy/gold crest (iv_league_banner.png), see docs/superpowers/specs/
+       2026-08-31-hackathon-dashboard-design.md §4. Data colors (categorical
+       blue/orange, status green/red) are the dataviz skill's validated
+       defaults, re-validated against this navy surface -- not eyeballed. */
+    --bg:#0d1b3e;
+    --panel:#13224d;
+    --panel-2:#182a5c;
+    --border:#c9a22740;
+    --border-soft:#c9a2271f;
+    --ink:#f4f1ea;
+    --ink-dim:#9aa3bf;
+    --ink-faint:#7d86a3;
+    --gold:#c9a227;
+    --gold-bright:#e6c85c;
+    --good:#0ca30c;
+    --critical:#d03b3b;
+    --series-premium:#2a78d6;
+    --series-directional:#d95926;
+    --serif:'Playfair Display', Georgia, serif;
     --mono:'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
     --sans:'IBM Plex Sans', system-ui, -apple-system, sans-serif;
   }
   *{box-sizing:border-box;}
+  html{scroll-behavior:smooth;}
   body{
-    background:var(--bg); color:var(--text); font-family:var(--sans);
-    margin:0; padding:40px 24px 80px; -webkit-font-smoothing:antialiased;
+    background:var(--bg); color:var(--ink); font-family:var(--sans);
+    margin:0; -webkit-font-smoothing:antialiased; overflow-x:hidden;
   }
-  a{color:inherit;}
-  .wrap{max-width:1040px; margin:0 auto;}
+  a{color:var(--gold-bright);}
+  .wrap{max-width:1080px; margin:0 auto; padding:0 24px 80px;}
 
-  .crumb{
-    font-family:var(--mono); font-size:12px; letter-spacing:.08em;
-    color:var(--text-faint); display:flex; gap:8px; align-items:center;
-    margin-bottom:18px;
+  /* ---------- Hero ---------- */
+  .hero{
+    background:linear-gradient(180deg, var(--panel) 0%, var(--bg) 100%);
+    border-bottom:1px solid var(--border); padding:36px 24px 28px; margin-bottom:28px;
   }
-  .crumb .sep{color:var(--border);}
-  .crumb .here{color:var(--text-dim);}
-
-  header.top{
-    display:flex; flex-wrap:wrap; align-items:baseline; justify-content:space-between;
-    gap:12px; margin-bottom:8px;
+  .hero-inner{max-width:1080px; margin:0 auto;}
+  .hero-banner{width:100%; max-width:760px; height:auto; display:block; margin:0 auto 22px; border-radius:6px;}
+  .about{
+    max-width:720px; margin:0 auto; text-align:center; color:var(--ink-dim);
+    font-size:14.5px; line-height:1.7;
   }
-  h1{
-    font-family:var(--mono); font-weight:600; font-size:clamp(24px,3.6vw,34px);
-    letter-spacing:-.01em; margin:0;
-  }
-  .meta{
-    font-family:var(--mono); font-size:12px; color:var(--text-faint);
-    display:flex; gap:14px; flex-wrap:wrap; align-items:center;
-  }
-  .version-badge{
-    font-family:var(--mono); font-size:11px; letter-spacing:.04em;
-    color:var(--deterministic); border:1px solid var(--deterministic);
-    border-radius:99px; padding:3px 10px;
+  .byline{
+    text-align:center; margin-top:14px; font-family:var(--mono); font-size:11.5px;
+    letter-spacing:.05em; color:var(--gold);
   }
 
+  /* ---------- Tabs ---------- */
+  nav.tabs{
+    display:flex; gap:6px; flex-wrap:wrap; justify-content:center;
+    margin-bottom:32px;
+  }
+  nav.tabs button{
+    font-family:var(--mono); font-size:12.5px; letter-spacing:.04em;
+    color:var(--ink-dim); background:transparent; border:1px solid var(--border);
+    border-radius:99px; padding:9px 18px; cursor:pointer; transition:all .15s ease;
+  }
+  nav.tabs button:hover{color:var(--ink); border-color:var(--gold);}
+  nav.tabs button.active{color:var(--bg); background:var(--gold); border-color:var(--gold); font-weight:600;}
+
+  .tab-panel{display:none;}
+  .tab-panel.active{display:block; animation:fadeIn .2s ease;}
+  @keyframes fadeIn{from{opacity:0;} to{opacity:1;}}
+
+  h2.section-title{
+    font-family:var(--serif); font-weight:700; font-size:22px; margin:0 0 18px;
+    color:var(--ink);
+  }
+
+  /* ---------- Stat tiles ---------- */
   .stat-grid{
-    display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr));
-    gap:14px; margin:28px 0 34px;
+    display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr));
+    gap:14px; margin-bottom:30px;
   }
   .stat-tile{
-    border:1px solid var(--border); border-radius:8px; background:var(--panel-solid);
-    padding:16px 18px;
+    border:1px solid var(--border-soft); border-radius:10px; background:var(--panel);
+    padding:18px 20px;
   }
   .stat-label{
-    font-family:var(--mono); font-size:10.5px; letter-spacing:.06em;
-    color:var(--text-faint); margin-bottom:8px;
+    font-family:var(--mono); font-size:10.5px; letter-spacing:.07em;
+    color:var(--ink-faint); margin-bottom:8px; text-transform:uppercase;
   }
-  .stat-value{
-    font-family:var(--mono); font-size:26px; font-weight:600;
-    font-variant-numeric:tabular-nums;
-  }
+  .stat-value{font-family:var(--sans); font-size:27px; font-weight:600;}
   .stat-value.positive{color:var(--good);}
-  .stat-value.negative{color:var(--bad);}
+  .stat-value.negative{color:var(--critical);}
 
-  .journal-head{
-    display:flex; align-items:baseline; justify-content:space-between;
-    margin-bottom:14px; flex-wrap:wrap; gap:8px;
-  }
-  .journal-head h2{
-    font-family:var(--mono); font-size:15px; font-weight:600; margin:0;
-    letter-spacing:.02em;
-  }
-  .journal-head .count{
-    font-family:var(--mono); font-size:12px; color:var(--text-faint);
-  }
+  /* ---------- Charts ---------- */
+  .chart-grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); gap:18px; margin-bottom:34px;}
+  .chart-card{border:1px solid var(--border-soft); border-radius:10px; background:var(--panel); padding:20px;}
+  .chart-card h3{font-family:var(--mono); font-size:12px; letter-spacing:.05em; color:var(--ink-faint); margin:0 0 14px; text-transform:uppercase;}
+  .chart-card svg{width:100%; height:auto; display:block; overflow:visible;}
+  .chart-legend{display:flex; gap:16px; margin-top:10px; font-family:var(--mono); font-size:11px; color:var(--ink-dim);}
+  .chart-legend .swatch{display:inline-block; width:9px; height:9px; border-radius:2px; margin-right:6px; vertical-align:middle;}
+  .bar-value-label{font-family:var(--mono); font-size:11px; fill:var(--ink);}
+  .bar-axis-label{font-family:var(--mono); font-size:10.5px; fill:var(--ink-faint);}
 
-  .table-frame{
-    border:1px solid var(--border-soft); border-radius:8px;
-    background:var(--panel-solid); overflow-x:auto;
+  /* ---------- Journal table ---------- */
+  .filters{display:flex; gap:10px; flex-wrap:wrap; margin-bottom:16px;}
+  .filters select{
+    font-family:var(--mono); font-size:12px; color:var(--ink); background:var(--panel);
+    border:1px solid var(--border); border-radius:6px; padding:7px 12px;
   }
-  table{width:100%; border-collapse:collapse; min-width:760px;}
+  .table-frame{border:1px solid var(--border-soft); border-radius:10px; background:var(--panel); overflow-x:auto;}
+  table{width:100%; border-collapse:collapse; min-width:820px;}
   thead th{
-    font-family:var(--mono); font-size:10.5px; letter-spacing:.05em;
-    color:var(--text-faint); text-align:left; font-weight:500;
-    padding:12px 14px; border-bottom:1px solid var(--border-soft);
-    white-space:nowrap;
+    font-family:var(--mono); font-size:10.5px; letter-spacing:.05em; text-transform:uppercase;
+    color:var(--ink-faint); text-align:left; font-weight:500; padding:12px 14px;
+    border-bottom:1px solid var(--border-soft); white-space:nowrap;
   }
   tbody td{
-    font-family:var(--mono); font-size:12.5px; color:var(--text-dim);
-    padding:11px 14px; border-bottom:1px solid var(--border-soft);
-    font-variant-numeric:tabular-nums; white-space:nowrap;
+    font-family:var(--mono); font-size:12.5px; color:var(--ink-dim); padding:11px 14px;
+    border-bottom:1px solid var(--border-soft); font-variant-numeric:tabular-nums; white-space:nowrap;
   }
   tbody tr:last-child td{border-bottom:none;}
-  td.ticker{color:var(--text); font-weight:600;}
-  td.pnl.positive{color:var(--good);}
-  td.pnl.negative{color:var(--bad);}
-  .strategy-tag{
-    font-size:10px; letter-spacing:.03em; padding:2px 7px; border-radius:99px;
-    border:1px solid currentColor;
-  }
-  .strategy-tag.premium-selling{color:var(--deterministic);}
-  .strategy-tag.directional{color:var(--judgment);}
-  .status-pill{
-    font-size:10px; letter-spacing:.03em; padding:2px 7px; border-radius:99px;
-    display:inline-flex; align-items:center; gap:5px;
-  }
+  td.ticker{color:var(--ink); font-weight:600;}
+  td.pnl.positive{color:var(--good); font-weight:600;}
+  td.pnl.negative{color:var(--critical); font-weight:600;}
+  .strategy-tag{font-size:10px; letter-spacing:.03em; padding:2px 8px; border-radius:99px; border:1px solid currentColor;}
+  .strategy-tag.premium-selling{color:var(--series-premium);}
+  .strategy-tag.directional{color:var(--series-directional);}
+  .status-pill{font-size:10px; letter-spacing:.03em; padding:2px 8px; border-radius:99px; display:inline-flex; align-items:center; gap:5px;}
   .status-pill::before{content:""; width:6px; height:6px; border-radius:50%; background:currentColor;}
-  .status-pill.closed{color:var(--text-faint); border:1px solid var(--border);}
-  .status-pill.open{color:var(--human); border:1px solid var(--human);}
+  .status-pill.closed{color:var(--ink-faint); border:1px solid var(--border);}
+  .status-pill.open{color:var(--gold-bright); border:1px solid var(--gold-bright);}
 
-  .empty, .error{
-    font-family:var(--mono); font-size:13px; color:var(--text-faint);
-    padding:40px 20px; text-align:center;
-  }
-  .error{color:var(--bad);}
+  .empty, .error{font-family:var(--mono); font-size:13px; color:var(--ink-faint); padding:40px 20px; text-align:center;}
+  .error{color:var(--critical);}
 
-  footer.note{
-    margin-top:34px; padding-top:18px; border-top:1px solid var(--border-soft);
-    font-family:var(--mono); font-size:11.5px; color:var(--text-faint); line-height:1.7;
+  /* ---------- Strategy Evolution ---------- */
+  #changelogBody{
+    border:1px solid var(--border-soft); border-radius:10px; background:var(--panel);
+    padding:8px 28px 24px; font-size:14px; line-height:1.7; color:var(--ink-dim);
+    overflow-x:auto;
   }
+  #changelogBody h1{font-family:var(--serif); color:var(--ink); font-size:24px;}
+  #changelogBody h2{font-family:var(--serif); color:var(--ink); font-size:19px; border-top:1px solid var(--border-soft); padding-top:20px; margin-top:28px;}
+  #changelogBody h3{color:var(--ink); font-size:15px;}
+  #changelogBody code{background:var(--panel-2); padding:1px 5px; border-radius:4px; font-family:var(--mono); font-size:.92em;}
+  #changelogBody table{width:100%; border-collapse:collapse; margin:14px 0; font-size:13px; min-width:0;}
+  #changelogBody th, #changelogBody td{border:1px solid var(--border-soft); padding:8px 10px; text-align:left;}
+  #changelogBody th{background:var(--panel-2); color:var(--ink); font-size:11.5px; text-transform:uppercase; letter-spacing:.04em;}
+  #changelogBody a{color:var(--gold-bright);}
+  #changelogBody hr{border:none; border-top:1px solid var(--border-soft); margin:24px 0;}
+
+  /* ---------- Architecture ---------- */
+  .arch-summary{color:var(--ink-dim); font-size:14.5px; line-height:1.8; max-width:760px; margin-bottom:24px;}
+  .arch-links{display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:16px;}
+  .arch-card{
+    display:block; border:1px solid var(--border-soft); border-radius:10px; background:var(--panel);
+    padding:22px; text-decoration:none; transition:border-color .15s ease;
+  }
+  .arch-card:hover{border-color:var(--gold);}
+  .arch-card .arch-card-title{font-family:var(--sans); font-weight:600; color:var(--ink); font-size:15px; margin-bottom:6px;}
+  .arch-card .arch-card-desc{color:var(--ink-faint); font-size:12.5px; line-height:1.5;}
+  .arch-card .arch-card-open{font-family:var(--mono); font-size:11px; color:var(--gold); margin-top:12px; display:block;}
+
+  /* ---------- Footer ---------- */
+  footer.site-footer{
+    margin-top:50px; padding:22px 24px; border-top:1px solid var(--border-soft);
+    text-align:center; font-family:var(--mono); font-size:11.5px; color:var(--ink-faint);
+  }
+  footer.site-footer a{color:var(--gold);}
 </style>
 </head>
 <body>
+
+  <header class="hero">
+    <div class="hero-inner">
+      <img class="hero-banner" src="assets/iv_league_banner.png" alt="The IV League — Est. 2026 — Volatility, harvested nightly">
+      <p class="about">
+        IV League is an AI-powered 0DTE options trading system that ranks eight
+        liquid stocks and ETFs using option-chain IV/skew, sells puts on the
+        strongest premium opportunities, and takes selective directional trades
+        on the remaining candidates. Specialized Analyst, Risk Manager,
+        Execution, and Strategist agents work together to analyze, trade,
+        monitor, and continuously improve the strategy.
+      </p>
+      <div class="byline">Built by Sakshar Thakkar</div>
+    </div>
+  </header>
+
   <div class="wrap">
-    <div class="crumb">
-      <span>0DTE OPTIONS SYSTEM</span>
-      <span class="sep">/</span>
-      <span class="here">DASHBOARD</span>
-    </div>
+    <nav class="tabs" role="tablist">
+      <button data-tab="overview" class="tab active">Overview</button>
+      <button data-tab="journal" class="tab">Trade Journal</button>
+      <button data-tab="strategy" class="tab">Strategy Evolution</button>
+      <button data-tab="architecture" class="tab">Architecture</button>
+    </nav>
 
-    <header class="top">
-      <h1>Trading Dashboard</h1>
-      <div class="meta">
-        <span id="updatedAt">loading&hellip;</span>
-        <span class="version-badge" id="versionBadge">v&mdash;</span>
+    <!-- ============ OVERVIEW ============ -->
+    <section id="tab-overview" class="tab-panel active">
+      <h2 class="section-title">Overview</h2>
+      <div class="stat-grid">
+        <div class="stat-tile">
+          <div class="stat-label">Account balance</div>
+          <div class="stat-value" id="statBalance">—</div>
+        </div>
+        <div class="stat-tile">
+          <div class="stat-label">Total realized P&amp;L</div>
+          <div class="stat-value" id="statTotalPnl">—</div>
+        </div>
+        <div class="stat-tile">
+          <div class="stat-label">Overall win rate</div>
+          <div class="stat-value" id="statWinRate">—</div>
+        </div>
+        <div class="stat-tile">
+          <div class="stat-label">Trades today</div>
+          <div class="stat-value" id="statTradesToday">—</div>
+        </div>
       </div>
-    </header>
 
-    <div class="stat-grid">
-      <div class="stat-tile">
-        <div class="stat-label">P&amp;L TODAY</div>
-        <div class="stat-value" id="pnlValue">&mdash;</div>
+      <div class="chart-grid">
+        <div class="chart-card">
+          <h3>Daily P&amp;L</h3>
+          <div id="dailyPnlChart"></div>
+        </div>
+        <div class="chart-card">
+          <h3>Win rate by strategy</h3>
+          <div id="winRateChart"></div>
+          <div class="chart-legend">
+            <span><span class="swatch" style="background:var(--series-premium)"></span>Premium-selling</span>
+            <span><span class="swatch" style="background:var(--series-directional)"></span>Directional</span>
+          </div>
+        </div>
       </div>
-      <div class="stat-tile">
-        <div class="stat-label">ACCOUNT BALANCE</div>
-        <div class="stat-value" id="balanceValue">&mdash;</div>
-      </div>
-      <div class="stat-tile">
-        <div class="stat-label">STRATEGY VERSION</div>
-        <div class="stat-value" id="strategyValue">&mdash;</div>
-      </div>
-      <div class="stat-tile">
-        <div class="stat-label">TRADES TODAY</div>
-        <div class="stat-value" id="tradesValue">&mdash;</div>
-      </div>
-    </div>
+    </section>
 
-    <div class="journal-head">
-      <h2>Trade Journal</h2>
-      <span class="count" id="journalCount"></span>
-    </div>
+    <!-- ============ TRADE JOURNAL ============ -->
+    <section id="tab-journal" class="tab-panel">
+      <h2 class="section-title">Trade Journal</h2>
+      <div class="filters">
+        <select id="filterStrategy">
+          <option value="all">All strategies</option>
+          <option value="premium-selling">Premium-selling</option>
+          <option value="directional">Directional</option>
+        </select>
+        <select id="filterDate">
+          <option value="all">All dates</option>
+        </select>
+      </div>
+      <div class="table-frame">
+        <table id="journalTable" hidden>
+          <thead>
+            <tr>
+              <th>Date</th><th>Time (ET)</th><th>Ticker</th><th>Strategy</th><th>Side</th>
+              <th>Entry</th><th>Exit</th><th>Qty</th><th>P&amp;L</th><th>Status</th><th>Exit reason</th>
+            </tr>
+          </thead>
+          <tbody id="journalBody"></tbody>
+        </table>
+        <div class="empty" id="journalEmpty">loading trade journal&hellip;</div>
+      </div>
+    </section>
 
-    <div class="table-frame">
-      <table id="journalTable" hidden>
-        <thead>
-          <tr>
-            <th>Time (ET)</th>
-            <th>Ticker</th>
-            <th>Strategy</th>
-            <th>Side</th>
-            <th>Entry</th>
-            <th>Exit</th>
-            <th>Qty</th>
-            <th>P&amp;L</th>
-            <th>Status</th>
-          </tr>
-        </thead>
-        <tbody id="journalBody"></tbody>
-      </table>
-      <div class="empty" id="emptyState">loading trade journal&hellip;</div>
-    </div>
+    <!-- ============ STRATEGY EVOLUTION ============ -->
+    <section id="tab-strategy" class="tab-panel">
+      <h2 class="section-title">Strategy Evolution</h2>
+      <div id="changelogBody">
+        <div class="empty">loading STRATEGY_CHANGELOG.md&hellip;</div>
+      </div>
+    </section>
 
-    <footer class="note">
-      Static page &mdash; no backend. Reads <code>data.json</code> in this
-      folder, written by an export step (Alpaca CLI account snapshot +
-      Execution Agent trade log) after each trade. See
-      <code>dashboard/README.md</code> for the schema and
-      <code>PROGRESS.md</code> for what's real vs. sample here.
+    <!-- ============ ARCHITECTURE ============ -->
+    <section id="tab-architecture" class="tab-panel">
+      <h2 class="section-title">Architecture</h2>
+      <p class="arch-summary">
+        Every morning the Strategy Engine ranks all 8 underlyings by option-chain
+        IV skew: the top 3 go to premium-selling (sell ~15&Delta; 0DTE puts,
+        cash-secured), the bottom 5 go to the Analyst Agent, which reads news,
+        events, and the first 10 minutes of price action to call each one
+        Bullish/Bearish/Undecided. The Risk Manager sizes and approves both
+        sides against live account balance, the Execution Agent places and
+        monitors every position (~1&nbsp;minute polling, TP/SL/EOD rules), and
+        the Strategist Agent reviews each day's results after the close,
+        proposing process fixes a human reviews before anything changes live.
+      </p>
+      <div class="arch-links">
+        <a class="arch-card" href="../diagrams/agent-flow.html" target="_blank" rel="noopener">
+          <div class="arch-card-title">Agent Handoff Flow</div>
+          <div class="arch-card-desc">The full daily sequence — market open through end-of-day liquidation — and which agent owns each handoff.</div>
+          <span class="arch-card-open">Open full diagram ↗</span>
+        </a>
+        <a class="arch-card" href="../diagrams/agent-roster.html" target="_blank" rel="noopener">
+          <div class="arch-card-title">Agent Roster</div>
+          <div class="arch-card-desc">Every agent in the system, what it's responsible for, and its execution authority (or lack of it).</div>
+          <span class="arch-card-open">Open full diagram ↗</span>
+        </a>
+      </div>
+    </section>
+
+    <footer class="site-footer">
+      Static page, no backend — reads <code>data.json</code> in this folder
+      (generated by <code>export_dashboard_data.py</code>) and
+      <code>../STRATEGY_CHANGELOG.md</code> client-side. See
+      <code>dashboard/README.md</code> for the schema.
+      · Built by Sakshar Thakkar
     </footer>
   </div>
 
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <script>
 (function(){
+  "use strict";
+
+  // ---------- formatting helpers ----------
   var fmtUSD = function(n){
     var sign = n < 0 ? '-' : '';
     return sign + '$' + Math.abs(n).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
@@ -213,64 +322,190 @@
   var fmtSigned = function(n){
     return (n > 0 ? '+' : n < 0 ? '-' : '') + '$' + Math.abs(n).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
   };
+  var fmtPct = function(n){ return (n * 100).toFixed(1) + '%'; };
   var fmtTime = function(iso){
     try{
-      var d = new Date(iso);
-      return d.toLocaleTimeString('en-US', {hour:'2-digit', minute:'2-digit', second:'2-digit', hour12:false, timeZone:'America/New_York'});
+      return new Date(iso).toLocaleTimeString('en-US', {hour:'2-digit', minute:'2-digit', second:'2-digit', hour12:false, timeZone:'America/New_York'});
     }catch(e){ return iso; }
   };
-  var fmtUpdated = function(iso){
-    try{
-      var d = new Date(iso);
-      return 'updated ' + d.toLocaleString('en-US', {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit', hour12:false, timeZone:'America/New_York'}) + ' ET';
-    }catch(e){ return 'updated ' + iso; }
-  };
-  var sideLabel = function(side){
-    return String(side).replace(/_/g, ' ');
-  };
+  var sideLabel = function(side){ return String(side).replace(/_/g, ' '); };
 
+  // ---------- tab routing (hash deep-links) ----------
+  var TABS = ['overview', 'journal', 'strategy', 'architecture'];
+  function showTab(name){
+    if(TABS.indexOf(name) === -1) name = 'overview';
+    TABS.forEach(function(t){
+      document.getElementById('tab-' + t).classList.toggle('active', t === name);
+    });
+    document.querySelectorAll('nav.tabs button').forEach(function(btn){
+      btn.classList.toggle('active', btn.dataset.tab === name);
+    });
+  }
+  document.querySelectorAll('nav.tabs button').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      location.hash = btn.dataset.tab;
+    });
+  });
+  window.addEventListener('hashchange', function(){
+    showTab(location.hash.replace('#', ''));
+  });
+  showTab(location.hash.replace('#', ''));
+
+  // ---------- bar chart builder (SVG, dataviz-skill mark specs:
+  // <=24px bars, 4px rounded data-end / square baseline, hairline
+  // baseline, direct value labels, native <title> hover tooltip) ----------
+  function buildBarChart(items, opts){
+    opts = opts || {};
+    var W = 520, H = 210, padTop = 20, padBottom = 40, padSide = 10;
+    var plotH = H - padTop - padBottom;
+    var n = items.length;
+    if(n === 0){
+      return '<div class="empty">no data yet</div>';
+    }
+    var maxVal = Math.max(0, opts.diverging ? Math.max.apply(null, items.map(function(d){return d.value;})) : Math.max.apply(null, items.map(function(d){return d.value;})));
+    var minVal = opts.diverging ? Math.min(0, Math.min.apply(null, items.map(function(d){return d.value;}))) : 0;
+    var range = (maxVal - minVal) || 1;
+    var baselineY = padTop + plotH * (maxVal / range);
+    var slotW = (W - padSide * 2) / n;
+    var barW = Math.min(24, slotW * 0.5);
+
+    var svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="' + (opts.ariaLabel || 'bar chart') + '">';
+    // baseline
+    svg += '<line x1="' + padSide + '" y1="' + baselineY + '" x2="' + (W - padSide) + '" y2="' + baselineY + '" stroke="var(--border)" stroke-width="1"/>';
+
+    items.forEach(function(d, i){
+      var cx = padSide + slotW * i + slotW / 2;
+      var barH = Math.abs(d.value) / range * plotH;
+      var isNeg = d.value < 0;
+      var y = isNeg ? baselineY : baselineY - barH;
+      var rTop = isNeg ? 0 : 4;
+      var rBot = isNeg ? 4 : 0;
+      var x = cx - barW / 2;
+      // path with rounded corner only on the data end, square at baseline
+      var path;
+      if(!isNeg){
+        path = 'M' + x + ',' + (y + rTop) +
+          ' Q' + x + ',' + y + ' ' + (x + rTop) + ',' + y +
+          ' H' + (x + barW - rTop) +
+          ' Q' + (x + barW) + ',' + y + ' ' + (x + barW) + ',' + (y + rTop) +
+          ' V' + (y + barH) + ' H' + x + ' Z';
+      } else {
+        var yb = y + barH;
+        path = 'M' + x + ',' + y +
+          ' H' + (x + barW) +
+          ' V' + (yb - rBot) +
+          ' Q' + (x + barW) + ',' + yb + ' ' + (x + barW - rBot) + ',' + yb +
+          ' H' + (x + rBot) +
+          ' Q' + x + ',' + yb + ' ' + x + ',' + (yb - rBot) + ' Z';
+      }
+      var color = d.color || 'var(--series-premium)';
+      svg += '<path d="' + path + '" fill="' + color + '"><title>' + d.label + ': ' + d.tooltip + '</title></path>';
+
+      var labelY = isNeg ? (y + barH + 14) : (y - 6);
+      svg += '<text class="bar-value-label" x="' + cx + '" y="' + labelY + '" text-anchor="middle">' + d.valueLabel + '</text>';
+      svg += '<text class="bar-axis-label" x="' + cx + '" y="' + (H - 6) + '" text-anchor="middle">' + d.label + '</text>';
+    });
+
+    svg += '</svg>';
+    return svg;
+  }
+
+  // ---------- render ----------
   fetch('./data.json', {cache:'no-store'})
-    .then(function(res){
-      if(!res.ok) throw new Error('HTTP ' + res.status);
-      return res.json();
-    })
-    .then(function(data){
-      document.getElementById('updatedAt').textContent = fmtUpdated(data.updated_at);
-      document.getElementById('versionBadge').textContent = data.strategy_version || 'v—';
-      document.getElementById('strategyValue').textContent = data.strategy_version || '—';
+    .then(function(res){ if(!res.ok) throw new Error('HTTP ' + res.status); return res.json(); })
+    .then(function(data){ renderDashboard(data); })
+    .catch(function(err){
+      var empty = document.getElementById('journalEmpty');
+      empty.className = 'error';
+      empty.textContent = 'Could not load data.json (' + err.message + '). Serve this repo over http(s) from its root ' +
+        '(e.g. "python3 -m http.server" run in the repo root, then open /dashboard/) rather than opening the file directly.';
+    });
 
-      var acct = data.account || {};
-      var pnl = typeof acct.daily_pnl === 'number' ? acct.daily_pnl : 0;
-      var pnlEl = document.getElementById('pnlValue');
-      pnlEl.textContent = fmtSigned(pnl);
-      pnlEl.classList.add(pnl > 0 ? 'positive' : pnl < 0 ? 'negative' : '');
+  function renderDashboard(data){
+    var acct = data.account || {};
+    var trades = Array.isArray(data.trades) ? data.trades.slice() : [];
+    var dailySummaries = Array.isArray(data.daily_summaries) ? data.daily_summaries : [];
+    var strategyStats = Array.isArray(data.strategy_stats) ? data.strategy_stats : [];
 
-      document.getElementById('balanceValue').textContent = fmtUSD(acct.balance || 0);
+    // -- stat tiles --
+    document.getElementById('statBalance').textContent = fmtUSD(acct.balance || 0);
 
-      var trades = Array.isArray(data.trades) ? data.trades.slice() : [];
-      trades.sort(function(a,b){ return new Date(b.timestamp) - new Date(a.timestamp); });
+    var totalPnl = trades.reduce(function(sum, t){ return sum + (t.pnl || 0); }, 0);
+    var totalPnlEl = document.getElementById('statTotalPnl');
+    totalPnlEl.textContent = fmtSigned(totalPnl);
+    totalPnlEl.classList.add(totalPnl > 0 ? 'positive' : totalPnl < 0 ? 'negative' : '');
 
-      document.getElementById('tradesValue').textContent = trades.length;
-      document.getElementById('journalCount').textContent = trades.length + ' trade' + (trades.length === 1 ? '' : 's');
+    var closed = trades.filter(function(t){ return t.status === 'CLOSED'; });
+    var wins = closed.filter(function(t){ return t.pnl > 0; }).length;
+    document.getElementById('statWinRate').textContent = closed.length ? fmtPct(wins / closed.length) : '—';
+
+    var today = dailySummaries.length ? dailySummaries[dailySummaries.length - 1] : null;
+    document.getElementById('statTradesToday').textContent = today ? today.trades_count : trades.length;
+
+    // -- daily P&L chart --
+    var pnlItems = dailySummaries.map(function(d){
+      return {
+        label: d.date.slice(5), // MM-DD
+        value: d.pnl,
+        valueLabel: fmtSigned(d.pnl),
+        tooltip: fmtSigned(d.pnl) + ' across ' + d.trades_count + ' trade(s), ' + fmtPct(d.win_rate) + ' win rate',
+        color: d.pnl >= 0 ? 'var(--good)' : 'var(--critical)',
+      };
+    });
+    document.getElementById('dailyPnlChart').innerHTML = buildBarChart(pnlItems, {diverging:true, ariaLabel:'Daily profit and loss'});
+
+    // -- win rate by strategy chart --
+    var stratColor = {'premium-selling':'var(--series-premium)', 'directional':'var(--series-directional)'};
+    var winItems = strategyStats.map(function(s){
+      return {
+        label: s.strategy,
+        value: s.win_rate,
+        valueLabel: fmtPct(s.win_rate),
+        tooltip: s.wins + 'W / ' + s.losses + 'L, ' + fmtSigned(s.total_pnl) + ' total',
+        color: stratColor[s.strategy] || 'var(--series-premium)',
+      };
+    });
+    document.getElementById('winRateChart').innerHTML = buildBarChart(winItems, {diverging:false, ariaLabel:'Win rate by strategy'});
+
+    // -- trade journal table + filters --
+    trades.sort(function(a,b){ return new Date(b.timestamp) - new Date(a.timestamp); });
+    var dateSelect = document.getElementById('filterDate');
+    var seenDates = [];
+    trades.forEach(function(t){ if(seenDates.indexOf(t.date) === -1) seenDates.push(t.date); });
+    seenDates.forEach(function(d){
+      var opt = document.createElement('option');
+      opt.value = d; opt.textContent = d;
+      dateSelect.appendChild(opt);
+    });
+
+    function renderJournal(){
+      var strategyFilter = document.getElementById('filterStrategy').value;
+      var dateFilter = document.getElementById('filterDate').value;
+      var filtered = trades.filter(function(t){
+        return (strategyFilter === 'all' || t.strategy === strategyFilter) &&
+               (dateFilter === 'all' || t.date === dateFilter);
+      });
 
       var tbody = document.getElementById('journalBody');
       var table = document.getElementById('journalTable');
-      var empty = document.getElementById('emptyState');
+      var empty = document.getElementById('journalEmpty');
+      tbody.innerHTML = '';
 
-      if(trades.length === 0){
-        empty.textContent = 'no trades yet today';
+      if(filtered.length === 0){
+        table.hidden = true; empty.hidden = false;
+        empty.textContent = trades.length === 0 ? 'no trades yet' : 'no trades match these filters';
         return;
       }
 
-      trades.forEach(function(t){
+      filtered.forEach(function(t){
         var tr = document.createElement('tr');
-
         var pnlText = (t.pnl === null || t.pnl === undefined) ? '—' : fmtSigned(t.pnl);
         var pnlClass = (t.pnl > 0) ? 'positive' : (t.pnl < 0) ? 'negative' : '';
         var strategyClass = t.strategy === 'directional' ? 'directional' : 'premium-selling';
         var statusClass = t.status === 'OPEN' ? 'open' : 'closed';
 
         tr.innerHTML =
+          '<td>' + t.date + '</td>' +
           '<td>' + fmtTime(t.timestamp) + '</td>' +
           '<td class="ticker">' + t.ticker + '</td>' +
           '<td><span class="strategy-tag ' + strategyClass + '">' + t.strategy + '</span></td>' +
@@ -279,20 +514,27 @@
           '<td>' + (t.exit_price != null ? t.exit_price.toFixed(2) : '—') + '</td>' +
           '<td>' + t.quantity + '</td>' +
           '<td class="pnl ' + pnlClass + '">' + pnlText + '</td>' +
-          '<td><span class="status-pill ' + statusClass + '">' + t.status + '</span></td>';
+          '<td><span class="status-pill ' + statusClass + '">' + t.status + '</span></td>' +
+          '<td>' + (t.exit_reason || '—') + '</td>';
         tbody.appendChild(tr);
       });
+      table.hidden = false; empty.hidden = true;
+    }
+    document.getElementById('filterStrategy').addEventListener('change', renderJournal);
+    document.getElementById('filterDate').addEventListener('change', renderJournal);
+    renderJournal();
+  }
 
-      table.hidden = false;
-      empty.hidden = true;
+  // ---------- strategy evolution (renders ../STRATEGY_CHANGELOG.md) ----------
+  fetch('../STRATEGY_CHANGELOG.md', {cache:'no-store'})
+    .then(function(res){ if(!res.ok) throw new Error('HTTP ' + res.status); return res.text(); })
+    .then(function(md){
+      document.getElementById('changelogBody').innerHTML = marked.parse(md);
     })
     .catch(function(err){
-      document.getElementById('updatedAt').textContent = 'load failed';
-      var empty = document.getElementById('emptyState');
-      empty.className = 'error';
-      empty.textContent = 'Could not load data.json (' + err.message + '). ' +
-        'Serve this folder over http(s) rather than opening the file directly ' +
-        '— e.g. "python3 -m http.server" in dashboard/, or view it via GitHub Pages.';
+      document.getElementById('changelogBody').innerHTML =
+        '<div class="error">Could not load STRATEGY_CHANGELOG.md (' + err.message + '). ' +
+        'Serve this repo over http(s) from its root so <code>../STRATEGY_CHANGELOG.md</code> resolves.</div>';
     });
 })();
 </script>

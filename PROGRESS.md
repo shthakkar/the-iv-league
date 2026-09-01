@@ -714,43 +714,92 @@ account only, human reviews every proposal interactively before
 anything's implemented) — revisit if this ever needs to run with less
 human oversight per cycle.
 
-## Dashboard — 🟡 SCAFFOLDED, sample data only, 2026-08-30
+## Dashboard — ✅ REBUILT with real data, branded "The IV League," 2026-08-31
 
-Files: `dashboard/index.html`, `dashboard/data.json`, `dashboard/README.md`.
-Spec §29. The page itself is done and smoke-tested (served locally via
-`python3 -m http.server`, verified it fetches `data.json` and renders the
-stat tiles + trade journal correctly, including OPEN-vs-CLOSED and
-positive/negative P&L styling). **`data.json` is hand-written sample
-data** — six illustrative trades across both strategies, nothing real —
-because nothing downstream of the Execution Agent exists yet to generate
-it.
+Files: `dashboard/index.html`, `dashboard/data.json`, `dashboard/README.md`,
+`dashboard/assets/` (banner/crest), `export_dashboard_data.py`,
+`tests/test_export_dashboard_data.py`. Spec §29. Design doc:
+`docs/superpowers/specs/2026-08-31-hackathon-dashboard-design.md`
+(brainstormed and approved same day as the first live trading day).
 
-**What it is**: a static HTML page, hosted on GitHub Pages, showing
-current P&L, account balance, active strategy version, and a trade
-journal. Updated on each trade — an export step (fired from wherever the
-Execution Agent logs a trade, §28) pulls the account snapshot via the
-**Alpaca CLI** and writes/appends a JSON file the page fetches
-client-side. No backend, so no live query — the JSON snapshot is the only
-sync mechanism GitHub Pages allows.
+Rebuilt from the sample-data scaffold into a single hackathon-facing page,
+branded **The IV League** (banner/crest assets supplied by the user,
+navy/gold/green/red palette taken directly from them). Four tabs, client-side
+routed with URL-hash deep-links (`#overview`, `#journal`, `#strategy`,
+`#architecture`) so any section can be linked to directly:
 
-**Why the CLI specifically**: this finally gives the CLI a concrete job.
-It was registered for the hackathon's "use all three Alpaca surfaces"
-requirement but sat unused (see the surfaces bullet above) — the
-Dashboard's account pull is real, ongoing usage rather than a one-off demo
-call.
+- **Overview**: stat tiles (balance, total realized P&L, overall win rate,
+  trades today) + two SVG bar charts (daily P&L, win-rate by strategy),
+  built by hand (no chart library) following the dataviz skill's mark specs
+  (4px rounded data-ends, hairline baseline, native `<title>` hover
+  tooltips, direct value labels). Colors: categorical blue/orange
+  (`#2a78d6`/`#d95926`) for strategy identity, status green/red
+  (`#0ca30c`/`#d03b3b`) for P&L polarity — the skill's validated defaults,
+  re-validated (`validate_palette.js`) against this page's navy surface
+  specifically since the palette was retargeted from the skill's own
+  light/dark surfaces to the brand's navy.
+- **Trade Journal**: the original scaffold's table, extended with
+  date/strategy filter dropdowns and a Date column (was single-day-only
+  before).
+- **Strategy Evolution**: fetches and renders `../STRATEGY_CHANGELOG.md`
+  client-side via `marked` (CDN) — no separate content to maintain, the
+  changelog file already written for the Strategist Agent's own input.
+- **Architecture**: a condensed prose summary of spec §30's pipeline plus
+  "Open full diagram ↗" links out to `diagrams/agent-flow.html` and
+  `diagrams/agent-roster.html` (not embedded/iframed — those pages keep
+  their own full-page polish).
 
-**Decided** (see `dashboard/README.md` for the full schema): the
-`data.json` shape — `updated_at`, `strategy_version`, `account
-{starting_balance, balance, daily_pnl}`, and a `trades[]` array (id,
-timestamp, ticker, strategy, side, entry/exit price, quantity, pnl,
-status, exit_reason). Realized P&L only; OPEN trades show no P&L rather
-than a computed unrealized mark.
+**Real data, not sample, for the first time**: `export_dashboard_data.py`
+(TDD, 11 unit tests against the real `logs/2026-08-31-execution.log` as
+fixture — its known real outcome, net -$3,927, is the correctness check,
+not a synthetic shape check) parses every `logs/<date>-execution.log`,
+reconstructs trades by joining `ENTRY`/`EXIT` lines by option symbol
+(strategy/side read straight off the entry — `SELL_TO_OPEN` is always a
+short put in V1, `BUY_TO_OPEN`'s call-vs-put comes from the OCC symbol's
+own C/P flag — no cross-reference against `risk-decisions-*.json`
+needed), and precomputes `daily_summaries[]`/`strategy_stats[]` alongside
+the raw `trades[]`. Calls `risk_manager.get_account_snapshot()` for the
+live balance. Run manually for now (`venv/bin/python3
+export_dashboard_data.py`); a GitHub Actions workflow to run it on a
+schedule is a separate, later task (see `NEXTSTEPS.md`) — this design only
+produces the script such a workflow would call.
 
-**Not yet decided**: where the export step lives (inside the Execution
-Agent's own loop vs. a separate script it shells out to), the GitHub
-Pages publish mechanism (commit-on-trade vs. a scheduled rebuild), and
-whether OPEN trades ever get an unrealized-P&L column. Deferred to
-whenever the Execution Agent gets built.
+**Placement decision**: `export_dashboard_data.py` lives at repo root, not
+`scripts/` as the design doc named it — every other unit-tested module
+(`risk_manager.py`, `strategy_engine.py`, `execution_agent.py`,
+`black_scholes.py`) lives at root so tests `import <module>` with no
+sys.path hack; `scripts/` is shell orchestration plus one untested CLI
+utility. Matched that convention since this module's parsing/aggregation
+logic needed the same test treatment.
+
+**GitHub Pages source corrected to repo root, not `/dashboard`**: the
+Architecture tab links to `/diagrams/*.html` and Strategy Evolution fetches
+`/STRATEGY_CHANGELOG.md` — both outside `dashboard/`. Serving Pages from
+`/dashboard` (as originally suggested in `NEXTSTEPS.md`) would 404 both,
+since Pages never serves files outside its chosen publish folder. Caught
+during design brainstorming, before anything was built against the wrong
+assumption. Local dev now matches production: serve the whole repo root
+(`python3 -m http.server` from repo root, not from inside `dashboard/`),
+open `/dashboard/`.
+
+**Verified live in Chrome** (`claude-in-chrome`, served from repo root):
+all four tabs render against the real `data.json`; hash deep-links work;
+both charts render correct real values with working hover tooltips; the
+Strategy Evolution tab correctly renders the real `STRATEGY_CHANGELOG.md`
+including its tables; both Architecture diagram links open the real
+`diagrams/*.html` pages in a new tab; zero console errors. Caught and
+fixed two real bugs this way, not just by reading the code: (1) the daily
+P&L chart's negative-value label overlapped its axis date label when the
+bar filled the full plot height — fixed by widening `padBottom` and the
+label offset; (2) the Strategy Evolution tab's wide changelog tables
+initially forced the *whole page* to scroll horizontally instead of
+scrolling within their own panel — fixed with `overflow-x:auto` on
+`#changelogBody` plus `overflow-x:hidden` on `body` as a backstop.
+
+**Not yet decided / deferred** (see `dashboard/README.md`'s matching
+section): the GitHub Actions automation itself, unrealized P&L for OPEN
+trades, and actually turning GitHub Pages on (Settings → Pages → serve
+from `/` root — a 2-minute task, still not done).
 
 ## Also built this session: morning-trigger scaffolding (not yet installed)
 

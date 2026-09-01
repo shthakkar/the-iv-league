@@ -188,16 +188,24 @@ behavior.
   the Strategist Agent itself now reads on every run so it doesn't
   re-propose already-decided things. See PROGRESS.md's Component 7 entry
   for the full writeup.
-- **Dashboard** (spec §29) — the page itself is done:
-  `dashboard/index.html` + `dashboard/data.json` (sample) +
-  `dashboard/README.md` (schema). No longer blocked on "no real trade
-  data exists" — today produced exactly that. Still open: where the
-  Alpaca-CLI export step lives (inside the Execution Agent's loop vs. a
-  separate script it shells out to), and the GitHub Pages publish
-  mechanism (commit-on-trade vs. scheduled rebuild) — see PROGRESS.md's
-  Dashboard entry. Turning GitHub Pages on for this repo (Settings →
-  Pages → serve from `/dashboard`) is still a 2-minute task, still not
-  done.
+- ~~**Dashboard** (spec §29)~~ — **Rebuilt, 2026-08-31**, branded "The IV
+  League," real data. `export_dashboard_data.py` generates
+  `dashboard/data.json` from the real `logs/*-execution.log` files + a
+  live account snapshot (no longer sample data); `dashboard/index.html` is
+  a four-tab page (Overview/Trade Journal/Strategy Evolution/Architecture)
+  with hash deep-links. See `PROGRESS.md`'s Dashboard entry and
+  `docs/superpowers/specs/2026-08-31-hackathon-dashboard-design.md` for
+  the full design. Verified live in Chrome. Still open:
+  - **GitHub Actions automation** — running `export_dashboard_data.py` on
+    a schedule and committing the result, so the dashboard updates itself
+    instead of a manual re-run. Not built yet.
+  - **Turning GitHub Pages on** — Settings → Pages → serve from the
+    **repository root** (`/`), *not* `/dashboard` (corrected during this
+    rebuild's design — the Architecture tab links to `/diagrams/*.html`
+    and Strategy Evolution fetches `/STRATEGY_CHANGELOG.md`, both outside
+    `dashboard/`, which `/dashboard`-sourced Pages would 404). Still a
+    2-minute task, still not done.
+  - **Unrealized P&L for OPEN positions** — still deferred, same as before.
 - **Position recycling** (spec §10) — re-entering after an early
   profitable close. Cut from MVP scope. Today's two CSPs both hit TP
   early (TSLA at 11:44 ET, AAPL at 10:51 ET) and then sat idle the rest

@@ -1,6 +1,9 @@
 # The IV League — Hackathon Dashboard Design
 
-Status: approved by user 2026-08-31, pending implementation plan.
+Status: approved and implemented 2026-08-31. See `PROGRESS.md`'s Dashboard
+entry for the built result and two deviations from this doc (script
+placement at repo root instead of `scripts/`; GitHub Pages source
+corrected to repo root instead of `/dashboard`, both explained there).
 
 ## Purpose
 
