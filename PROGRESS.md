@@ -866,8 +866,8 @@ eventual orchestrator:
 - **MCP server registration is fragile across restarts**: local scope
   (`claude mcp add` default) silently didn't survive a session restart once
   (empty `mcpServers` in `~/.claude.json` afterward, cause not fully
-  understood). **Project scope is what's committed** (`.mcp.json` in this
-  repo) — more durable, and shareable if this goes on GitHub.
+  understood). **Project scope** (`.mcp.json` in this repo) is more durable
+  — but see below, it's no longer committed.
 - **`.mcp.json` uses literal credentials, not `${VAR}` references**: tried
   `${ALPACA_API_KEY}`/`${ALPACA_SECRET_KEY}` substitution first (cleaner,
   keeps secrets out of git) but it kept resolving to empty even with
@@ -875,10 +875,20 @@ eventual orchestrator:
   ways) — every real MCP data call 401'd. Root cause not fully nailed down
   (looks like Claude Code resolving `.mcp.json` env-refs against a different
   process environment than the interactive shell), but reverting to literal
-  values immediately fixed it. Low-stakes tradeoff since this is a
-  paper-trading-only key. If picking this back up: worth a clean
-  investigation if reproducible, since env-var refs are the right long-term
-  answer for a real secret.
+  values immediately fixed it. Worth a clean investigation if reproducible,
+  since env-var refs are the right long-term answer for a real secret.
+- **Corrected, 2026-08-31, before making this repo public**: the literal
+  credentials above were actually committed (2 commits, `8492449`/`90070d5`)
+  — a real exposure once the repo went public, even at paper-trading-only
+  stakes. Scrubbed from **all** git history with `git filter-branch`
+  (`git-filter-repo` wasn't installable in this environment; the repo was
+  small enough — 30 commits — that `filter-branch --index-filter` plus
+  `reflog expire` + `gc --prune=now` was verified clean by scanning every
+  blob object in the rewritten history for the leaked key string before
+  pushing anywhere). `.mcp.json` is now gitignored (real literal
+  credentials, local-only); `.mcp.json.example` is the committed template
+  with placeholder values — copy it to `.mcp.json` and fill in real values
+  on a fresh clone.
 - **Any new/changed MCP server registration needs a Claude Code restart** to
   load its tools into a session — registering mid-session never works, even
   if the server itself connects fine (confirmed via raw JSON-RPC probes
