@@ -94,12 +94,24 @@ class BuildDailySummaryTests(unittest.TestCase):
     def test_real_day_summary(self):
         entries, exits = ex.parse_execution_log(REAL_LOG)
         trades = ex.reconstruct_trades(entries, exits, date="2026-08-31")
-        summary = ex.build_daily_summary(trades, date="2026-08-31")
+        summary = ex.build_daily_summary(trades, date="2026-08-31", starting_balance=100_000.00)
         self.assertEqual(summary["date"], "2026-08-31")
         self.assertAlmostEqual(summary["pnl"], -3927.00, places=2)
         self.assertEqual(summary["trades_count"], 3)
         # 2 of 3 closed trades (TSLA, AAPL) were profitable.
         self.assertAlmostEqual(summary["win_rate"], 2 / 3, places=4)
+        # -3927 / 100,000 * 100 = -3.927%
+        self.assertAlmostEqual(summary["pnl_pct"], -3.927, places=3)
+
+    def test_pnl_pct_uses_that_days_starting_balance_not_a_fixed_constant(self):
+        # A later day's % must be computed off the balance carried INTO that
+        # day (compounding), not always off the original $100k -- otherwise
+        # the same dollar loss on a shrunken account understates its real
+        # impact.
+        entries, exits = ex.parse_execution_log(REAL_LOG)
+        trades = ex.reconstruct_trades(entries, exits, date="2026-08-31")
+        summary = ex.build_daily_summary(trades, date="2026-08-31", starting_balance=96_069.12)
+        self.assertAlmostEqual(summary["pnl_pct"], -3927.00 / 96_069.12 * 100, places=4)
 
 
 class BuildStrategyStatsTests(unittest.TestCase):

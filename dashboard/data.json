@@ -1,5 +1,5 @@
 {
-  "updated_at": "2026-09-01T23:12:32-07:00",
+  "updated_at": "2026-09-02T00:03:18-07:00",
   "strategy_version": "v1.0",
   "account": {
     "starting_balance": 100000.0,
@@ -10,12 +10,14 @@
     {
       "date": "2026-08-31",
       "pnl": -3927.0,
+      "pnl_pct": -3.927,
       "trades_count": 3,
       "win_rate": 0.6667
     },
     {
       "date": "2026-09-01",
       "pnl": -796.0,
+      "pnl_pct": -0.8285,
       "trades_count": 4,
       "win_rate": 0.25
     }

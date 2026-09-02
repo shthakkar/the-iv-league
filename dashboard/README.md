@@ -56,6 +56,7 @@ either way.
     {
       "date": "2026-08-31",
       "pnl": -3927.00,                           // sum of that day's CLOSED trades' pnl
+      "pnl_pct": -3.927,                          // pnl / balance CARRIED INTO that day * 100 (compounds day-over-day, not always off the original $100k)
       "trades_count": 3,                          // all trades that day, OPEN or CLOSED
       "win_rate": 0.6667                          // wins / closed trades that day
     }

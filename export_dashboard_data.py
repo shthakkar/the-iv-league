@@ -126,12 +126,18 @@ def reconstruct_trades(entries: list[dict], exits: list[dict], date: str) -> lis
     return trades
 
 
-def build_daily_summary(trades: list[dict], date: str) -> dict:
+def build_daily_summary(trades: list[dict], date: str, starting_balance: float) -> dict:
+    """starting_balance is the account balance CARRIED INTO this day (not
+    the fixed original $100k) -- pnl_pct compounds day over day so a later
+    day's percentage reflects its real impact on the then-current balance,
+    not an increasingly-stale original figure."""
     closed = [t for t in trades if t["status"] == "CLOSED"]
     wins = sum(1 for t in closed if t["pnl"] > 0)
+    pnl = round(sum(t["pnl"] for t in closed), 2)
     return {
         "date": date,
-        "pnl": round(sum(t["pnl"] for t in closed), 2),
+        "pnl": pnl,
+        "pnl_pct": round(pnl / starting_balance * 100, 4) if starting_balance else 0.0,
         "trades_count": len(trades),
         "win_rate": round(wins / len(closed), 4) if closed else 0.0,
     }
@@ -171,11 +177,14 @@ def discover_execution_logs() -> list[tuple[str, pathlib.Path]]:
 def main() -> None:
     all_trades: list[dict] = []
     daily_summaries: list[dict] = []
+    running_balance = STARTING_BALANCE  # carried day-to-day for pnl_pct's compounding basis
     for date, path in discover_execution_logs():
         entries, exits = parse_execution_log(path)
         trades = reconstruct_trades(entries, exits, date=date)
         all_trades.extend(trades)
-        daily_summaries.append(build_daily_summary(trades, date=date))
+        summary = build_daily_summary(trades, date=date, starting_balance=running_balance)
+        daily_summaries.append(summary)
+        running_balance += summary["pnl"]
 
     realized_pnl = sum(t["pnl"] for t in all_trades if t["status"] == "CLOSED")
     snapshot = risk_manager.get_account_snapshot()
