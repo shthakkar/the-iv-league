@@ -21,12 +21,15 @@ from dataclasses import dataclass
 from alpaca.data.historical.option import OptionHistoricalDataClient
 from alpaca.data.historical.stock import StockHistoricalDataClient
 from alpaca.data.requests import OptionChainRequest, StockLatestTradeRequest
+from alpaca.trading.client import TradingClient
+from alpaca.trading.requests import GetCalendarRequest
 
 import black_scholes as bs
 import config
 
 _stock_client = StockHistoricalDataClient(config.API_KEY, config.API_SECRET)
 _option_client = OptionHistoricalDataClient(config.API_KEY, config.API_SECRET)
+_trading_client = TradingClient(config.API_KEY, config.API_SECRET, paper=config.PAPER)
 
 # Where --json ranking snapshots get persisted (Change 1) -- same
 # CACHE_DIR/write-cache convention as prefetch_news.py.
@@ -72,6 +75,25 @@ class SkippedTicker:
 def _today_expiration() -> str:
     """Today's date as YYYY-MM-DD — the real "0DTE" expiration in production."""
     return datetime.date.today().isoformat()
+
+
+def _next_trading_day(after: str) -> str | None:
+    """First real market day strictly after `after` (YYYY-MM-DD), per Alpaca's
+    own calendar -- no local weekday/holiday math, the calendar API is
+    authoritative on weekends/market holidays. Used for the no-0dte-fallback-
+    policy decision (2026-09-02, see NEXTSTEPS.md/STRATEGY_CHANGELOG.md):
+    when a ticker has no usable same-day (0DTE) chain, rank_ticker() retries
+    against this date's chain instead of skipping the ticker outright. Returns
+    None if the calendar has nothing later (shouldn't happen in practice,
+    defensive only)."""
+    after_date = datetime.date.fromisoformat(after)
+    calendar = _trading_client.get_calendar(
+        GetCalendarRequest(start=after_date, end=after_date + datetime.timedelta(days=7))
+    )
+    for day in calendar:
+        if day.date > after_date:
+            return day.date.isoformat()
+    return None
 
 
 def _parse_occ_symbol(symbol: str) -> tuple[float, str]:
@@ -179,11 +201,14 @@ def _get_spot_price(ticker: str) -> float:
     return trade.price
 
 
-def rank_ticker(ticker: str, expiration: str) -> RankedCandidate | SkippedTicker:
-    spot = _get_spot_price(ticker)
-    if spot <= 0:
-        return SkippedTicker(ticker, "no valid spot quote")
-
+def _rank_at_expiration(ticker: str, spot: float, expiration: str) -> RankedCandidate | SkippedTicker:
+    """One attempt at building a RankedCandidate for `ticker` at a single
+    `expiration` -- the whole chain-fetch/ATM/15-delta pipeline, minus the
+    spot-price fetch (expiration-independent, done once by the caller).
+    Split out of rank_ticker() so it can be tried at the primary (0DTE)
+    expiration and, on failure, retried at a fallback expiration (the
+    no-0dte-fallback-policy decision, 2026-09-02) without duplicating this
+    logic."""
     calls, puts, greeks_source = _fetch_liquid_chain(ticker, spot, expiration)
     if not calls or not puts:
         return SkippedTicker(
@@ -196,7 +221,7 @@ def rank_ticker(ticker: str, expiration: str) -> RankedCandidate | SkippedTicker
     common_strikes = set(calls) & set(puts)
     if not common_strikes:
         return SkippedTicker(
-            ticker, "no strike with both liquid call and put for ATM IV",
+            ticker, f"no strike with both liquid call and put for ATM IV at {expiration}",
             greeks_source=greeks_source,
         )
     atm_strike = min(common_strikes, key=lambda k: abs(k - spot))
@@ -230,17 +255,58 @@ def rank_ticker(ticker: str, expiration: str) -> RankedCandidate | SkippedTicker
     )
 
 
+def rank_ticker(
+    ticker: str, expiration: str, fallback_expiration: str | None = None,
+) -> RankedCandidate | SkippedTicker:
+    """Ranks `ticker` at `expiration` (production: today's date, the real
+    0DTE expiration). If that chain isn't usable and `fallback_expiration`
+    is given, retries once against it before giving up -- the
+    no-0dte-fallback-policy decision (2026-09-02, see NEXTSTEPS.md/
+    STRATEGY_CHANGELOG.md): a ticker with no same-day chain gets ranked off
+    the next trading day's chain instead of being skipped outright. Position
+    lifecycle is unchanged either way (same-day force-close still applies,
+    per execution_agent.py) -- this only changes which expiration gets
+    ranked/sized/traded. Spot-quote failure is never retried: it isn't
+    expiration-related, so a different expiration can't fix it."""
+    spot = _get_spot_price(ticker)
+    if spot <= 0:
+        return SkippedTicker(ticker, "no valid spot quote")
+
+    primary_result = _rank_at_expiration(ticker, spot, expiration)
+    if isinstance(primary_result, RankedCandidate) or fallback_expiration is None:
+        return primary_result
+
+    fallback_result = _rank_at_expiration(ticker, spot, fallback_expiration)
+    if isinstance(fallback_result, RankedCandidate):
+        print(
+            f"EXPIRATION_FALLBACK ticker={ticker} primary={expiration} fallback={fallback_expiration}",
+            file=sys.stderr,
+        )
+        return fallback_result
+
+    return SkippedTicker(
+        ticker,
+        f"{primary_result.reason}; also tried fallback {fallback_expiration}: {fallback_result.reason}",
+        greeks_source=primary_result.greeks_source,
+    )
+
+
 def rank_universe(
     universe: list[str] | None = None,
     expiration: str | None = None,
 ) -> tuple[list[RankedCandidate], list[SkippedTicker]]:
-    """Rank the universe by IV skew, descending. Returns (ranked, skipped)."""
+    """Rank the universe by IV skew, descending. Returns (ranked, skipped).
+    Computes the no-0dte-fallback-policy's fallback expiration (next trading
+    day) once per run and passes it to every ticker -- cheap (one calendar
+    call), and rank_ticker() only actually uses it for tickers whose primary
+    chain isn't usable."""
     universe = universe or config.UNIVERSE
     expiration = expiration or config.EXPIRATION_OVERRIDE or _today_expiration()
+    fallback_expiration = _next_trading_day(expiration)
 
     ranked, skipped = [], []
     for ticker in universe:
-        result = rank_ticker(ticker, expiration)
+        result = rank_ticker(ticker, expiration, fallback_expiration=fallback_expiration)
         if isinstance(result, SkippedTicker):
             skipped.append(result)
         else:

@@ -175,5 +175,143 @@ class RankTickerGreeksSourcePropagationTests(unittest.TestCase):
         self.assertEqual(result.greeks_source, "unavailable")
 
 
+class NextTradingDayTests(unittest.TestCase):
+    """_next_trading_day() -- the no-0dte-fallback-policy decision (2026-09-02):
+    when a ticker has no same-day 0DTE chain, strategy_engine falls back to the
+    next trading day's chain instead of skipping outright. Position lifecycle
+    is unchanged (same-day force-close still applies, per execution_agent.py --
+    this only changes which expiration gets ranked/sized/traded)."""
+
+    def test_returns_first_calendar_date_after_the_given_date(self):
+        import types
+        calendar = [
+            types.SimpleNamespace(date=__import__("datetime").date(2026, 9, 2)),
+            types.SimpleNamespace(date=__import__("datetime").date(2026, 9, 3)),
+        ]
+        with patch.object(se, "_trading_client") as mock_client:
+            mock_client.get_calendar.return_value = calendar
+            result = se._next_trading_day("2026-09-02")
+
+        self.assertEqual(result, "2026-09-03")
+
+    def test_skips_weekend_via_whatever_the_calendar_api_returns(self):
+        # 2026-09-04 is a Friday; calendar naturally omits the weekend, so
+        # the next real trading day is Monday 2026-09-07 -- no local
+        # weekday/holiday math needed, the Alpaca calendar is authoritative.
+        import types
+        calendar = [
+            types.SimpleNamespace(date=__import__("datetime").date(2026, 9, 4)),
+            types.SimpleNamespace(date=__import__("datetime").date(2026, 9, 7)),
+        ]
+        with patch.object(se, "_trading_client") as mock_client:
+            mock_client.get_calendar.return_value = calendar
+            result = se._next_trading_day("2026-09-04")
+
+        self.assertEqual(result, "2026-09-07")
+
+    def test_returns_none_when_calendar_has_no_later_date(self):
+        import types
+        calendar = [types.SimpleNamespace(date=__import__("datetime").date(2026, 9, 2))]
+        with patch.object(se, "_trading_client") as mock_client:
+            mock_client.get_calendar.return_value = calendar
+            result = se._next_trading_day("2026-09-02")
+
+        self.assertIsNone(result)
+
+
+class RankTicker1DTEFallbackTests(unittest.TestCase):
+    """rank_ticker(ticker, expiration, fallback_expiration=...) -- retries
+    against the next trading day's chain when today's (0DTE) chain isn't
+    usable, instead of skipping the ticker outright."""
+
+    def test_no_fallback_given_behaves_exactly_as_before(self):
+        with patch.object(se, "_get_spot_price", return_value=600.0), \
+             patch.object(se, "_fetch_liquid_chain", return_value=({}, {}, "unavailable")):
+            result = se.rank_ticker("SPY", "2026-09-02")
+
+        self.assertIsInstance(result, se.SkippedTicker)
+
+    def test_falls_back_to_next_trading_day_when_primary_chain_empty(self):
+        primary_chain = ({}, {}, "unavailable")
+        fallback_chain = (
+            {600.0: (0.5, 0.20, "SPY260903C00600000", 1.0, 1.2)},
+            {600.0: (-0.5, 0.22, "SPY260903P00600000", 1.0, 1.2),
+             590.0: (-0.15, 0.25, "SPY260903P00590000", 0.4, 0.5)},
+            "alpaca",
+        )
+        with patch.object(se, "_get_spot_price", return_value=600.0), \
+             patch.object(se, "_fetch_liquid_chain", side_effect=[primary_chain, fallback_chain]):
+            result = se.rank_ticker("SPY", "2026-09-02", fallback_expiration="2026-09-03")
+
+        self.assertIsInstance(result, se.RankedCandidate)
+        self.assertEqual(result.expiration, "2026-09-03")
+
+    def test_falls_back_when_primary_chain_has_no_common_atm_strike(self):
+        primary_chain = (
+            {610.0: (0.5, 0.20, "SPY260902C00610000", 1.0, 1.2)},  # no matching put strike
+            {600.0: (-0.5, 0.22, "SPY260902P00600000", 1.0, 1.2)},
+            "alpaca",
+        )
+        fallback_chain = (
+            {600.0: (0.5, 0.20, "SPY260903C00600000", 1.0, 1.2)},
+            {600.0: (-0.5, 0.22, "SPY260903P00600000", 1.0, 1.2),
+             590.0: (-0.15, 0.25, "SPY260903P00590000", 0.4, 0.5)},
+            "alpaca",
+        )
+        with patch.object(se, "_get_spot_price", return_value=600.0), \
+             patch.object(se, "_fetch_liquid_chain", side_effect=[primary_chain, fallback_chain]):
+            result = se.rank_ticker("SPY", "2026-09-02", fallback_expiration="2026-09-03")
+
+        self.assertIsInstance(result, se.RankedCandidate)
+        self.assertEqual(result.expiration, "2026-09-03")
+
+    def test_skipped_when_both_primary_and_fallback_chains_empty(self):
+        with patch.object(se, "_get_spot_price", return_value=600.0), \
+             patch.object(se, "_fetch_liquid_chain", return_value=({}, {}, "unavailable")):
+            result = se.rank_ticker("SPY", "2026-09-02", fallback_expiration="2026-09-03")
+
+        self.assertIsInstance(result, se.SkippedTicker)
+        self.assertIn("2026-09-02", result.reason)
+        self.assertIn("2026-09-03", result.reason)
+
+    def test_no_retry_when_spot_price_itself_is_invalid(self):
+        # Spot-quote failure isn't expiration-related -- retrying against a
+        # different expiration can't fix it, so _fetch_liquid_chain should
+        # never even be called.
+        with patch.object(se, "_get_spot_price", return_value=0.0), \
+             patch.object(se, "_fetch_liquid_chain") as mock_fetch:
+            result = se.rank_ticker("SPY", "2026-09-02", fallback_expiration="2026-09-03")
+
+        mock_fetch.assert_not_called()
+        self.assertIsInstance(result, se.SkippedTicker)
+
+    def test_logs_fallback_used_line_to_stderr(self):
+        primary_chain = ({}, {}, "unavailable")
+        fallback_chain = (
+            {600.0: (0.5, 0.20, "SPY260903C00600000", 1.0, 1.2)},
+            {600.0: (-0.5, 0.22, "SPY260903P00600000", 1.0, 1.2),
+             590.0: (-0.15, 0.25, "SPY260903P00590000", 0.4, 0.5)},
+            "alpaca",
+        )
+        buf = io.StringIO()
+        with patch.object(se, "_get_spot_price", return_value=600.0), \
+             patch.object(se, "_fetch_liquid_chain", side_effect=[primary_chain, fallback_chain]):
+            with redirect_stderr(buf):
+                se.rank_ticker("SPY", "2026-09-02", fallback_expiration="2026-09-03")
+
+        self.assertIn("EXPIRATION_FALLBACK ticker=SPY primary=2026-09-02 fallback=2026-09-03", buf.getvalue())
+
+
+class RankUniverseFallbackWiringTests(unittest.TestCase):
+    def test_rank_universe_computes_and_passes_fallback_expiration_to_rank_ticker(self):
+        with patch.object(se, "_next_trading_day", return_value="2026-09-03") as mock_next, \
+             patch.object(se, "rank_ticker") as mock_rank:
+            mock_rank.return_value = se.SkippedTicker("SPY", "no valid spot quote")
+            se.rank_universe(universe=["SPY"], expiration="2026-09-02")
+
+        mock_next.assert_called_once_with("2026-09-02")
+        mock_rank.assert_called_once_with("SPY", "2026-09-02", fallback_expiration="2026-09-03")
+
+
 if __name__ == "__main__":
     unittest.main()
