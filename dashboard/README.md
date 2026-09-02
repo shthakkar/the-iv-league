@@ -17,8 +17,9 @@ cd /Users/manalithakkar/Documents/ivleague
 venv/bin/python3 export_dashboard_data.py
 ```
 
-Automating that (GitHub Actions, on a schedule) is a separate, later task —
-see `NEXTSTEPS.md`.
+**Staying manual by decision (2026-09-02)**: considered automating this via
+GitHub Actions on a schedule, but explicitly not wanted — run by hand each
+day after the Strategist review cycle instead. Not building the workflow.
 
 ## Viewing it
 
@@ -129,12 +130,10 @@ discipline, just also captured in a compact structured form. The
 includes optional `before`/`after` fields in this same style, so a
 human approving a Strategist proposal can often copy the row straight in.
 
-## Not yet decided / deferred
+## Resolved 2026-09-02 (previously listed here as open)
 
-- **GitHub Actions automation** — running `export_dashboard_data.py` on a
-  schedule and committing the result. Tracked in `NEXTSTEPS.md`.
-- **Unrealized P&L for OPEN trades** — still shown as "—" / excluded from
-  aggregates. Would need a live option quote per open position at export
-  time.
-- **Turning on GitHub Pages itself** — a repo-settings task (Settings → Pages
-  → serve from `/` root, see above), not yet done.
+- **GitHub Actions automation** — decided against; staying manual, run by
+  hand after each day's Strategist review.
+- **Unrealized P&L for OPEN trades** — dropped, not wanted.
+- **GitHub Pages** — confirmed already live (checked via `gh api`, serving
+  from `main` at repo root exactly as needed), no action was required.

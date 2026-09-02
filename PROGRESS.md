@@ -814,10 +814,11 @@ short put in V1, `BUY_TO_OPEN`'s call-vs-put comes from the OCC symbol's
 own C/P flag — no cross-reference against `risk-decisions-*.json`
 needed), and precomputes `daily_summaries[]`/`strategy_stats[]` alongside
 the raw `trades[]`. Calls `risk_manager.get_account_snapshot()` for the
-live balance. Run manually for now (`venv/bin/python3
-export_dashboard_data.py`); a GitHub Actions workflow to run it on a
-schedule is a separate, later task (see `NEXTSTEPS.md`) — this design only
-produces the script such a workflow would call.
+live balance. Run manually (`venv/bin/python3 export_dashboard_data.py`) —
+**decided 2026-09-02: staying manual, no GitHub Actions automation.**
+Considered scheduling it, but explicitly not wanted: human runs it by hand
+each day after the Strategist review cycle instead. Not building the
+workflow.
 
 **Placement decision**: `export_dashboard_data.py` lives at repo root, not
 `scripts/` as the design doc named it — every other unit-tested module
@@ -851,10 +852,11 @@ initially forced the *whole page* to scroll horizontally instead of
 scrolling within their own panel — fixed with `overflow-x:auto` on
 `#changelogBody` plus `overflow-x:hidden` on `body` as a backstop.
 
-**Not yet decided / deferred** (see `dashboard/README.md`'s matching
-section): the GitHub Actions automation itself, unrealized P&L for OPEN
-trades, and actually turning GitHub Pages on (Settings → Pages → serve
-from `/` root — a 2-minute task, still not done).
+**Resolved 2026-09-02** (all three items this section used to list as
+open): GitHub Actions automation decided against (staying manual, see
+above); unrealized P&L for OPEN trades dropped, not wanted; GitHub Pages
+confirmed already live (checked via `gh api`, no action needed). See
+`dashboard/README.md`'s matching section.
 
 ## Also built this session: morning-trigger scaffolding (not yet installed)
 

@@ -196,9 +196,10 @@ behavior.
   with hash deep-links. See `PROGRESS.md`'s Dashboard entry and
   `docs/superpowers/specs/2026-08-31-hackathon-dashboard-design.md` for
   the full design. Verified live in Chrome. Still open:
-  - **GitHub Actions automation** — running `export_dashboard_data.py` on
-    a schedule and committing the result, so the dashboard updates itself
-    instead of a manual re-run. Not built yet.
+  - ~~**GitHub Actions automation**~~ — **decided against, 2026-09-02.**
+    Considered (running `export_dashboard_data.py` on a schedule and
+    committing the result) but explicitly not wanted: human will run it
+    manually each day after the Strategist cycle instead. Not building this.
   - ~~**Turning GitHub Pages on**~~ — **Confirmed already live, 2026-09-02.**
     Checked via `gh api repos/.../pages`: already serving from `main` at
     repo root (exactly what was needed), verified both `/dashboard/` and
