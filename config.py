@@ -79,6 +79,18 @@ MAX_DIRECTIONAL_SELECTED = 3
 # closed or a same-day expiration isn't available — see strategy_engine.py.
 EXPIRATION_OVERRIDE = os.environ.get("EXPIRATION_OVERRIDE", "")
 
+# ---------- NEWS PREFETCH ----------
+# Max articles per ticker, last 24h (spec section 12's news input).
+# Changed 2026-09-01: prefetch_news.py used to make ONE combined API call
+# for the full 8-ticker universe with limit=50 shared across all of them --
+# confirmed live as a real bug, not just a timing quirk: on a high-news
+# morning the shared 50-item cap silently crowded out older-but-relevant
+# articles for individual tickers well within the nominal 24h window (a
+# real NVDA story from 06:06 ET was missing from the 09:30:48 ET cache --
+# see STRATEGY_CHANGELOG.md's 2026-09-01 entry). Fixed by fetching each
+# ticker separately so one busy name can never crowd out another's news.
+NEWS_ARTICLES_PER_TICKER = 10
+
 # ---------- RISK MANAGER / CAPITAL ALLOCATION ----------
 # Spec section 7's 95%/5% split was originally two independent fixed
 # percentages, applied dynamically to the account's real options_buying_

@@ -893,6 +893,19 @@ eventual orchestrator:
   load its tools into a session — registering mid-session never works, even
   if the server itself connects fine (confirmed via raw JSON-RPC probes
   bypassing Claude Code entirely).
+- **Subagent (`.claude/agents/*.md`) definition changes also need a
+  restart, same as MCP registrations — confirmed live, 2026-09-01**: edited
+  `analyst.md` mid-session (added a `Write` tool + a new persistence
+  instruction), then dispatched a live validation run. The subagent
+  reported its actual configured instructions did **not** include the new
+  Write tool or persistence step — and correctly refused to treat the task
+  prompt's description of "your newly-added step" as authoritative when
+  its own instructions disagreed (the right defensive instinct, just
+  triggered by a stale cache here rather than an injection attempt).
+  Confirmed no shadowing file exists (only one `analyst.md` in the repo,
+  edit correctly saved) — this session's subagent-definition cache
+  predates the edit. Re-validate after a restart before trusting any
+  subagent-prompt change made mid-session.
 - **Volume from the MCP/SDK bars endpoints is IEX-feed only**, not
   consolidated SIP tape — the Analyst subagent has been told to flag this
   when reasoning about whether volume looks elevated, since it may

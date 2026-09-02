@@ -220,3 +220,29 @@ behavior.
   `feed=iex` required explicitly, SIP 403's on this account) but didn't
   measure the lag itself. Do this before tightening the 9:41 trigger
   buffer.
+
+## Next up (from 2026-09-01)
+
+- **Re-validate `analyst.md`'s new observation-persistence step after a
+  Claude Code restart.** Edited mid-session (2026-09-01), but a subagent
+  definition change needs a restart to actually load — same class of
+  gotcha as MCP server registration (see `PROGRESS.md`). A live validation
+  dispatch confirmed the edit hadn't taken effect yet. After restarting,
+  re-dispatch the `analyst` subagent for any ticker/date and confirm
+  `logs/cache/analyst-observation-<date>-<ticker>.json` actually gets
+  written before trusting this is live.
+- **`no-0dte-fallback-policy` (Strategist proposal, 2026-09-01) — still
+  undecided.** Only SPY/QQQ had a same-day 0DTE chain that day; the other
+  6 tickers genuinely had none. Whether to define a real skip-vs-substitute
+  policy for days like this, or keep handling it ad hoc, is still open —
+  see `STRATEGY_CHANGELOG.md`'s 2026-09-01 entry.
+- **Directional time-decay mitigation — discussed, not decided.** Three
+  options on the table (skip no-0DTE days entirely / buy deeper ITM on any
+  substitute trade / use a defined-risk debit spread instead of a naked
+  long), prompted by a real 2026-09-01 example (AAPL: spot -0.3%, option
+  -42%, a decay-dominated loss). Blocked on **logging entry/exit IV per
+  directional trade** first — right now there's no way to tell whether a
+  given loss was theta, vega (IV compression), or plain bid/ask slippage,
+  and tuning the exit window or strike selection without that would be
+  guessing at the actual cause. No numeric or structural change made yet,
+  per explicit instruction that cycle.
