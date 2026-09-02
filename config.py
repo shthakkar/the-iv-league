@@ -62,21 +62,31 @@ RISK_FREE_RATE = 0.045
 # ---------- DIRECTIONAL SELECTION ----------
 # Minimum Analyst confidence (0-100) for a directional candidate to be
 # selected for a trade (spec section 14: "only candidates with sufficient
-# confidence"). Not spec-fixed — chosen from the one validated live run in
-# PROGRESS.md, where decisive reads landed at 62 and UNDECIDED/conflicted
-# reads landed at 30; 55 sits clearly above the noise floor without being
-# tuned to that single sample. Revisit once the Strategist Agent has real
-# trade history to check it against (spec section 25).
-MIN_DIRECTIONAL_CONFIDENCE = 55
+# confidence"). Not spec-fixed — originally 55, chosen from the one
+# validated live run in PROGRESS.md (decisive reads landed at 62,
+# UNDECIDED/conflicted reads at 30). Raised to 60, 2026-09-02, a human
+# decision after 3 real trading days showed directional losing on 5 of 6
+# trades (net -$5,671) including two that cleared the old 55 bar only
+# narrowly (55, 56) and both lost — see STRATEGY_CHANGELOG.md's 2026-09-02
+# entry for the full evidence (live track record + externally-sourced
+# research on long-0DTE-directional structures) behind this and the two
+# sibling changes below.
+MIN_DIRECTIONAL_CONFIDENCE = 60
 
 # Max directional trades selected per day — spec-fixed at 3 ("select up to
 # 3", spec section 14), unlike MIN_DIRECTIONAL_CONFIDENCE above.
 MAX_DIRECTIONAL_SELECTED = 3
 
 # Expiration date to treat as "0DTE" for this run, YYYY-MM-DD. In production
-# this should be computed as today's date (or skipped if no 0DTE chain
-# exists for a ticker). Overridable here for testing when markets are
-# closed or a same-day expiration isn't available — see strategy_engine.py.
+# this should be computed as today's date. Overridable here for testing when
+# markets are closed or a same-day expiration isn't available — see
+# strategy_engine.py. Changed 2026-09-02 (no-0dte-fallback-policy decision):
+# a ticker with no usable same-day chain no longer just skips — rank_ticker()
+# retries once against the next trading day's chain (strategy_engine.py's
+# _next_trading_day()) before giving up. Position lifecycle is unchanged
+# either way: same-day force-close still applies (execution_agent.py never
+# holds anything overnight), this only changes which expiration gets
+# ranked/sized/traded.
 EXPIRATION_OVERRIDE = os.environ.get("EXPIRATION_OVERRIDE", "")
 
 # ---------- NEWS PREFETCH ----------
@@ -120,8 +130,16 @@ NEWS_ARTICLES_PER_TICKER = 10
 #    `1.0 - directional_pct` of balance, so the two sides always sum to the
 #    full available balance. 1 directional selected -> 99% premium, 2 ->
 #    98%, 3 -> 97%, 0 -> 100%. See risk_manager.compute_budgets().
-DIRECTIONAL_PCT_PER_STOCK = 0.01  # 1% of balance per selected directional candidate
-DIRECTIONAL_MAX_PCT = 0.03        # cap on total directional allocation regardless of count
+# Changed 2026-09-02 (human decision, see STRATEGY_CHANGELOG.md's
+# 2026-09-02 entry): halved from 1%/3% to 0.5%/1.5% after 3 real days
+# showed directional losing on 5 of 6 trades — a live, if small, sample
+# corroborated by external research (long ATM/near-ATM 0DTE directional
+# structures show negative median PNL; short-premium structures
+# outperform — see the changelog entry's cited sources). Sizing down
+# doesn't fix the edge, but caps how much a persistently negative-tilt
+# leg can cost while more trade history accumulates.
+DIRECTIONAL_PCT_PER_STOCK = 0.005  # 0.5% of balance per selected directional candidate
+DIRECTIONAL_MAX_PCT = 0.015        # cap on total directional allocation regardless of count
 
 # Spec section 23 hard limits. Max daily loss is deliberately NOT here —
 # dropped for V1, see PROGRESS.md (its "halt new positions" behavior is
@@ -150,10 +168,28 @@ MAX_POSITIONS = 6
 # alpacabot project's EOD_EXIT_TIME.
 PREMIUM_EOD_CLOSE_TIME = datetime.time(15, 45)
 
-# Directional exit time -- spec section 18, fixed at 2:30 PM ET regardless
-# of P&L. Not configurable; it's the thing V1 is testing (does the 9:40 AM
-# signal predict price movement through 2:30 PM), not a tunable knob.
-DIRECTIONAL_CLOSE_TIME = datetime.time(14, 30)
+# Directional exit -- changed 2026-09-02 (human decision, see
+# STRATEGY_CHANGELOG.md's 2026-09-02 entry) from spec section 18's
+# original fixed 2:30 PM ET clock-time close to a fixed DURATION relative
+# to each position's own entry. Rationale: research (Gao/Han/Xie/Zhou's
+# "first half-hour predicts last half-hour" finding, and practitioner 0DTE
+# backtests favoring short holds) plus live evidence (today's TSLA loss:
+# the adverse move happened within the first hour of a ~4-hour hold, with
+# the remaining hours just accumulating decay) both suggest a multi-hour
+# hold accumulates cost without reaching the part of the session where the
+# documented signal-predicts-later-return edge concentrates. Directional
+# still enters only once in the morning (spec section 17 unchanged) --
+# only how long each position is HELD changed, not how often it enters.
+DIRECTIONAL_HOLD_MINUTES = 30
+
+# Cutoff for opening ANY new position -- originally just the directional
+# close time; repurposed 2026-09-02 as the hard stop for position
+# recycling (spec section 10, built for the first time this date) on the
+# premium-selling side: once a short put closes (TP or SL) before this
+# time, re-rank and try to open one replacement position with the freed
+# capital. Same clock time as the old DIRECTIONAL_CLOSE_TIME (2:30 PM ET),
+# now serving a different purpose.
+NEW_ENTRY_CUTOFF_TIME = datetime.time(14, 30)
 
 # Monitoring loop poll interval, spec section 19-20 ("~every 1 minute").
 MONITOR_POLL_SECS = 60

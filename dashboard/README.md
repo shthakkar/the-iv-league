@@ -103,6 +103,32 @@ needed. Then calls `risk_manager.get_account_snapshot()` for the live balance.
 See the design doc's §3.1 for the full algorithm, hand-verified against
 2026-08-31's real known outcome (net -$3,927).
 
+## `strategy_changes.json` schema
+
+Backs the Strategy Evolution tab's compact table (added 2026-09-02,
+replacing a full render of `../STRATEGY_CHANGELOG.md`'s markdown — too
+verbose for a dashboard). A flat list, oldest-first on disk (the page
+reverses it to show newest-first):
+
+```jsonc
+[
+  {
+    "date": "2026-09-02",
+    "change": "Directional exit rule",              // short label
+    "before": "fixed 2:30 PM ET clock time",         // terse, table-cell length
+    "after": "30 min after each position's own entry",
+    "suggested_by": "AI" | "Human" | "AI+Human"      // who originated the idea, not who implemented it
+  }
+]
+```
+
+Not auto-generated — maintained by hand (or by whoever implements an
+approved change) alongside `STRATEGY_CHANGELOG.md`'s prose entry, same
+discipline, just also captured in a compact structured form. The
+`strategist` subagent's own proposal schema (`.claude/agents/strategist.md`)
+includes optional `before`/`after` fields in this same style, so a
+human approving a Strategist proposal can often copy the row straight in.
+
 ## Not yet decided / deferred
 
 - **GitHub Actions automation** — running `export_dashboard_data.py` on a

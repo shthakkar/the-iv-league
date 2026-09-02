@@ -41,32 +41,35 @@ class ComputeBudgetsTests(unittest.TestCase):
         self.assertAlmostEqual(budgets.premium_sell_budget, 100_000)
         self.assertAlmostEqual(budgets.directional_budget, 0)
 
-    def test_premium_gets_99_pct_when_one_directional_selected(self):
+    def test_premium_gets_99_5_pct_when_one_directional_selected(self):
+        # Changed 2026-09-02: DIRECTIONAL_PCT_PER_STOCK halved 1% -> 0.5%
+        # (see config.py's comment and STRATEGY_CHANGELOG.md's 2026-09-02
+        # entry) after 3 real days showed directional losing on 5 of 6 trades.
         snapshot = rm.AccountSnapshot(cash=100_000, options_buying_power=100_000, equity=100_000)
         budgets = rm.compute_budgets(snapshot, num_directional_selected=1)
+        self.assertAlmostEqual(budgets.premium_sell_budget, 99_500)
+        self.assertAlmostEqual(budgets.directional_budget, 500)
+
+    def test_premium_gets_99_pct_when_two_directional_selected(self):
+        snapshot = rm.AccountSnapshot(cash=100_000, options_buying_power=100_000, equity=100_000)
+        budgets = rm.compute_budgets(snapshot, num_directional_selected=2)
         self.assertAlmostEqual(budgets.premium_sell_budget, 99_000)
         self.assertAlmostEqual(budgets.directional_budget, 1_000)
 
-    def test_premium_gets_98_pct_when_two_directional_selected(self):
-        snapshot = rm.AccountSnapshot(cash=100_000, options_buying_power=100_000, equity=100_000)
-        budgets = rm.compute_budgets(snapshot, num_directional_selected=2)
-        self.assertAlmostEqual(budgets.premium_sell_budget, 98_000)
-        self.assertAlmostEqual(budgets.directional_budget, 2_000)
-
-    def test_premium_gets_97_pct_when_three_directional_selected(self):
+    def test_premium_gets_98_5_pct_when_three_directional_selected(self):
         snapshot = rm.AccountSnapshot(cash=100_000, options_buying_power=100_000, equity=100_000)
         budgets = rm.compute_budgets(snapshot, num_directional_selected=3)
-        self.assertAlmostEqual(budgets.premium_sell_budget, 97_000)
-        self.assertAlmostEqual(budgets.directional_budget, 3_000)  # at the 3% cap
+        self.assertAlmostEqual(budgets.premium_sell_budget, 98_500)
+        self.assertAlmostEqual(budgets.directional_budget, 1_500)  # at the new 1.5% cap
 
-    def test_directional_budget_caps_at_3_pct_beyond_three_selected_stocks(self):
+    def test_directional_budget_caps_at_1_5_pct_beyond_three_selected_stocks(self):
         # Hypothetical 4+ selected (MAX_DIRECTIONAL_SELECTED is spec-fixed at 3,
         # but the formula itself must still cap rather than exceed it) --
-        # premium correspondingly stays at 97%, not dropping to 96%.
+        # premium correspondingly stays at 98.5%, not dropping further.
         snapshot = rm.AccountSnapshot(cash=100_000, options_buying_power=100_000, equity=100_000)
         budgets = rm.compute_budgets(snapshot, num_directional_selected=4)
-        self.assertAlmostEqual(budgets.directional_budget, 3_000)  # still capped at 3%, not 4%
-        self.assertAlmostEqual(budgets.premium_sell_budget, 97_000)
+        self.assertAlmostEqual(budgets.directional_budget, 1_500)  # still capped at 1.5%, not 2%
+        self.assertAlmostEqual(budgets.premium_sell_budget, 98_500)
 
     def test_premium_plus_directional_always_sums_to_full_balance(self):
         snapshot = rm.AccountSnapshot(cash=100_000, options_buying_power=100_000, equity=100_000)
@@ -77,9 +80,9 @@ class ComputeBudgetsTests(unittest.TestCase):
     def test_falls_back_to_cash_when_options_buying_power_is_zero(self):
         snapshot = rm.AccountSnapshot(cash=50_000, options_buying_power=0, equity=50_000)
         budgets = rm.compute_budgets(snapshot, num_directional_selected=3)
-        # 3 selected -> directional 3% (at the cap), premium the complementary 97%.
-        self.assertAlmostEqual(budgets.directional_budget, 1_500)
-        self.assertAlmostEqual(budgets.premium_sell_budget, 48_500)
+        # 3 selected -> directional 1.5% (at the new cap), premium the complementary 98.5%.
+        self.assertAlmostEqual(budgets.directional_budget, 750)
+        self.assertAlmostEqual(budgets.premium_sell_budget, 49_250)
 
 
 class AllocatePremiumPositionsTests(unittest.TestCase):
@@ -264,10 +267,10 @@ class EvaluateTests(unittest.TestCase):
 
         result = rm.evaluate(premium_ranked, directional_lookup, directional_selected, snapshot=snapshot)
 
-        # 1 directional candidate selected -> directional 1%, premium the
-        # complementary 99% (not a fixed 95%/flat 5% split anymore).
-        self.assertAlmostEqual(result.budgets.premium_sell_budget, 99_000)
-        self.assertAlmostEqual(result.budgets.directional_budget, 1_000)
+        # 1 directional candidate selected -> directional 0.5% (2026-09-02
+        # change), premium the complementary 99.5%.
+        self.assertAlmostEqual(result.budgets.premium_sell_budget, 99_500)
+        self.assertAlmostEqual(result.budgets.directional_budget, 500)
         self.assertEqual(len(result.premium_decisions), 1)
         self.assertTrue(result.premium_decisions[0].approved)
         self.assertEqual(result.premium_decisions[0].ticker, "NVDA")

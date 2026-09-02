@@ -199,18 +199,18 @@ behavior.
   - **GitHub Actions automation** — running `export_dashboard_data.py` on
     a schedule and committing the result, so the dashboard updates itself
     instead of a manual re-run. Not built yet.
-  - **Turning GitHub Pages on** — Settings → Pages → serve from the
-    **repository root** (`/`), *not* `/dashboard` (corrected during this
-    rebuild's design — the Architecture tab links to `/diagrams/*.html`
-    and Strategy Evolution fetches `/STRATEGY_CHANGELOG.md`, both outside
-    `dashboard/`, which `/dashboard`-sourced Pages would 404). Still a
-    2-minute task, still not done.
-  - **Unrealized P&L for OPEN positions** — still deferred, same as before.
-- **Position recycling** (spec §10) — re-entering after an early
-  profitable close. Cut from MVP scope. Today's two CSPs both hit TP
-  early (TSLA at 11:44 ET, AAPL at 10:51 ET) and then sat idle the rest
-  of the day per the current MVP design — a concrete, real example of the
-  capital-left-idle cost this would address.
+  - ~~**Turning GitHub Pages on**~~ — **Confirmed already live, 2026-09-02.**
+    Checked via `gh api repos/.../pages`: already serving from `main` at
+    repo root (exactly what was needed), verified both `/dashboard/` and
+    `/STRATEGY_CHANGELOG.md` return 200 live at
+    `https://shthakkar.github.io/the-iv-league/`. No action was needed.
+  - ~~**Unrealized P&L for OPEN positions**~~ — **decided not needed,
+    2026-09-02.** Dropped by explicit human decision.
+- ~~**Position recycling** (spec §10)~~ — **Built, 2026-09-02**, premium-selling
+  side only. See `STRATEGY_CHANGELOG.md`'s 2026-09-02 entry and
+  `execution_agent.py`'s `decide_premium_recycle()`/`attempt_premium_recycle()`.
+  Not yet live-validated (built same session as this note, next real
+  trading day is the first live test of it firing for real).
 - **News/events for premium-selling side** — Analyst inputs (§12) are
   directional-strategy-specific; premium-selling ranking is pure IV skew
   math (§5) and doesn't need news.
@@ -223,26 +223,54 @@ behavior.
 
 ## Next up (from 2026-09-01)
 
-- **Re-validate `analyst.md`'s new observation-persistence step after a
-  Claude Code restart.** Edited mid-session (2026-09-01), but a subagent
-  definition change needs a restart to actually load — same class of
-  gotcha as MCP server registration (see `PROGRESS.md`). A live validation
-  dispatch confirmed the edit hadn't taken effect yet. After restarting,
-  re-dispatch the `analyst` subagent for any ticker/date and confirm
-  `logs/cache/analyst-observation-<date>-<ticker>.json` actually gets
-  written before trusting this is live.
-- **`no-0dte-fallback-policy` (Strategist proposal, 2026-09-01) — still
-  undecided.** Only SPY/QQQ had a same-day 0DTE chain that day; the other
-  6 tickers genuinely had none. Whether to define a real skip-vs-substitute
-  policy for days like this, or keep handling it ad hoc, is still open —
-  see `STRATEGY_CHANGELOG.md`'s 2026-09-01 entry.
-- **Directional time-decay mitigation — discussed, not decided.** Three
-  options on the table (skip no-0DTE days entirely / buy deeper ITM on any
-  substitute trade / use a defined-risk debit spread instead of a naked
-  long), prompted by a real 2026-09-01 example (AAPL: spot -0.3%, option
-  -42%, a decay-dominated loss). Blocked on **logging entry/exit IV per
-  directional trade** first — right now there's no way to tell whether a
-  given loss was theta, vega (IV compression), or plain bid/ask slippage,
-  and tuning the exit window or strike selection without that would be
-  guessing at the actual cause. No numeric or structural change made yet,
-  per explicit instruction that cycle.
+- ~~**Re-validate `analyst.md`'s new observation-persistence step after a
+  Claude Code restart.**~~ — **Confirmed live, 2026-09-02.** Post-restart,
+  re-dispatched the `analyst` subagent for MSFT/2026-09-02 (standard 10-min
+  window): returned a real structured read (UNDECIDED, 35, whipsaw-vs-BofA-
+  catalyst reasoning) and correctly wrote
+  `logs/cache/analyst-observation-2026-09-02-MSFT.json`. Separately, this
+  morning's real live cron run had already exercised it for real at 7:11 AM
+  (5 tickers, real bars/news persisted) — both confirm it independently.
+- ~~**Re-validate `strategist.md`'s new §6 Profitability Analysis + WebSearch
+  tool after a restart, too**~~ — **Confirmed live, 2026-09-02.**
+  Post-restart re-dispatch against 2026-09-02 produced a real §6
+  Profitability Analysis section (premium vs. directional P&L breakdown,
+  cross-day trend read from `dashboard/data.json`) and correctly reasoned
+  about *not* calling `WebSearch` this time (the pattern it found was
+  already researched and sourced in that day's earlier `STRATEGY_CHANGELOG.md`
+  entry — a fresh search would've been redundant, not a sign the tool isn't
+  wired up). Note: the pre-restart run at 11:38 AM that morning lacked this
+  section entirely, which is itself confirmation the edit hadn't been live
+  yet at that point — backed up before overwriting with the re-validation run.
+- ~~**`no-0dte-fallback-policy`**~~ — **Decided and built, 2026-09-02: fall
+  back to 1DTE.** When a ticker has no same-day 0DTE chain,
+  `strategy_engine.py` now retries once against the next real trading day's
+  chain before skipping it. Position lifecycle unchanged — still
+  force-closed same-day like every other position, never held overnight, so
+  this stayed a small change (no calendar/position-persistence logic). See
+  `STRATEGY_CHANGELOG.md`'s matching 2026-09-02 entry and `SPEC.md` §2.
+  TDD, 101/101 tests passing. Not yet live-validated against a real no-0DTE
+  day (today had a full 8-ticker chain, so the fallback path never actually
+  triggered live) — watch for it the next time a ticker genuinely lacks a
+  same-day chain.
+- **Directional time-decay mitigation — partially acted on, 2026-09-02.**
+  Three options were on the table (skip no-0DTE days entirely / buy deeper
+  ITM on any substitute trade / use a defined-risk debit spread instead of
+  a naked long) after a 2026-09-01 example (AAPL: spot -0.3%, option -42%).
+  None of those three were implemented directly — instead, after 3 days'
+  combined evidence (directional 1/6 win rate, net -$5,671) plus external
+  research, a different set of changes landed: directional hold shortened
+  to 30 min from entry, confidence bar raised to 60, allocation halved to
+  0.5%/1.5%, and premium-side recycling built. See `STRATEGY_CHANGELOG.md`'s
+  2026-09-02 entry for the full reasoning and sources. **Still open**:
+  logging entry/exit IV per directional trade (to separate theta from
+  vega/slippage in future post-mortems — still not done). ~~The bigger
+  structural question of whether a naked long call/put is the right
+  instrument at all vs. a defined-risk spread or risk-reversal~~ —
+  **decided, 2026-09-02: keep the naked long, no change.** See
+  `STRATEGY_CHANGELOG.md`'s matching entry.
+- **Watch tomorrow's cron run all four 2026-09-02 changes live for the
+  first time**: the shortened directional hold, the raised confidence bar,
+  the smaller allocation, and — especially — premium recycling actually
+  triggering a real re-rank + new order mid-morning. None of this has run
+  unattended yet.

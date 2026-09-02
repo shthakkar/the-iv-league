@@ -22,15 +22,19 @@
 # correction on this, prompted by checking alpacabot's real fill logs).
 # Take-profit (50% of credit) and EOD close are poll-based.
 #
-# Directional (spec section 15/18): buy_to_open on entry. No TP/SL at
-# all -- purely time-based close at 2:30 PM ET regardless of P&L. Much
-# simpler than alpacabot's side (no avg-ups, no scaling).
+# Directional (spec section 15/17): buy_to_open on entry, once per
+# morning only. No TP/SL at all -- purely time-based close, changed
+# 2026-09-02 from a fixed 2:30 PM ET clock time to config.
+# DIRECTIONAL_HOLD_MINUTES (30) after each position's own entry -- see
+# config.py's comment and STRATEGY_CHANGELOG.md's 2026-09-02 entry for
+# why. Much simpler than alpacabot's side (no avg-ups, no scaling).
 #
-# Position recycling (spec section 10) is NOT implemented -- deferred for
-# MVP (see NEXTSTEPS.md and PROGRESS.md). A position that closes mid-day
-# (only possible on the premium-selling side; directional never closes
-# early) is terminal: logged, and that capital sits idle for the rest of
-# the day. No re-evaluation, no new position opened in its place.
+# Position recycling (spec section 10), built 2026-09-02 -- see
+# decide_premium_recycle()/attempt_premium_recycle() below. Premium-selling
+# ONLY: when a short put closes (TP or SL) before config.
+# NEW_ENTRY_CUTOFF_TIME, re-rank and open one replacement position with
+# the freed capital. Directional never recycles -- spec section 17's
+# once-per-morning entry is unchanged, only its hold DURATION changed.
 # ================================================================
 from __future__ import annotations
 
@@ -207,8 +211,13 @@ def check_premium_exit(
 
 def check_directional_exit(position: DirectionalPosition, now: datetime.datetime) -> str | None:
     """Purely time-based (spec section 18) -- no TP/SL fields exist on
-    this side at all."""
-    if now.timetz().replace(tzinfo=None) >= config.DIRECTIONAL_CLOSE_TIME:
+    this side at all. Changed 2026-09-02: relative to this position's OWN
+    entry (config.DIRECTIONAL_HOLD_MINUTES after entered_at), not a fixed
+    clock time -- see config.py's comment for why. Both position.entered_at
+    and now must be timezone-aware and comparable (both config.ET in
+    production)."""
+    elapsed = now - position.entered_at
+    if elapsed >= datetime.timedelta(minutes=config.DIRECTIONAL_HOLD_MINUTES):
         return "TIME"
     return None
 
@@ -315,6 +324,69 @@ def tick_premium_position(position: PremiumPosition) -> bool:
     return True
 
 
+# ----------------------------------------------------------------
+# Position recycling (spec section 10), built 2026-09-02 -- see
+# config.py's NEW_ENTRY_CUTOFF_TIME comment and STRATEGY_CHANGELOG.md's
+# 2026-09-02 entry. Triggered when a premium position closes (TP or SL,
+# not EOD -- EOD only fires once the day is already ending). Split the
+# same way as the rest of this module: decide_premium_recycle() is pure
+# and unit-tested; attempt_premium_recycle() is the thin live wrapper
+# (fresh account snapshot + fresh ranking + real order placement).
+# ----------------------------------------------------------------
+def decide_premium_recycle(
+    premium_ranked: list,
+    held_tickers: set,
+    total_premium_budget: float,
+    now: datetime.datetime,
+) -> "rm.Decision | None":
+    """Pure decision logic. premium_ranked: a FRESH strategy_engine ranking's
+    premium-selling side (already sorted by IV skew descending -- 0DTE skew
+    moves fast, so recycling re-ranks rather than reusing the morning's
+    stale snapshot, same reasoning as the 2026-08-31 ranking-consistency
+    fix). held_tickers: every ticker currently open on EITHER side --
+    never re-enter one already held (spec section 10, literal). Sizes the
+    top eligible candidate against ONE slot's worth of the current total
+    premium budget (total_premium_budget / config.PREMIUM_SELL_COUNT) --
+    approximates the original equal N-way split for the one slot being
+    replaced, rather than handing a single recycled position the entire
+    currently-free budget. Returns None past the entry cutoff, if nothing
+    is eligible, or if the top eligible candidate isn't affordable --
+    never forces a trade (spec section 8's principle applies here too)."""
+    if now.timetz().replace(tzinfo=None) >= config.NEW_ENTRY_CUTOFF_TIME:
+        return None
+    eligible = [c for c in premium_ranked if c.ticker not in held_tickers]
+    if not eligible:
+        return None
+    top = eligible[0]
+    slot_budget = total_premium_budget / config.PREMIUM_SELL_COUNT
+    candidate = rm.PremiumCandidate(
+        ticker=top.ticker, symbol=top.put_15d_symbol,
+        strike=top.put_15d_strike, credit_price=top.put_15d_bid,
+    )
+    decision = rm.allocate_premium_positions([candidate], slot_budget)[0]
+    return decision if decision.approved else None
+
+
+def attempt_premium_recycle(held_tickers: set, num_directional_selected: int) -> PremiumPosition | None:
+    """Live wrapper: fresh account snapshot + fresh universe ranking, then
+    decide_premium_recycle(). Opens the position for real if approved.
+    Thin I/O glue, not unit-tested beyond decide_premium_recycle()'s pure
+    logic -- same split as get_account_snapshot()/rank_universe() elsewhere
+    in this codebase."""
+    import strategy_engine as se
+
+    now = datetime.datetime.now(config.ET)
+    snapshot = rm.get_account_snapshot()
+    budgets = rm.compute_budgets(snapshot, num_directional_selected)
+    ranked, _ = se.rank_universe()
+    premium_ranked, _ = se.split_candidates(ranked)
+
+    decision = decide_premium_recycle(premium_ranked, held_tickers, budgets.premium_sell_budget, now)
+    if decision is None:
+        return None
+    return open_premium_position(decision)
+
+
 def tick_directional_position(position: DirectionalPosition) -> bool:
     now = datetime.datetime.now(config.ET)
     reason = check_directional_exit(position, now)
@@ -387,9 +459,14 @@ def _append_log(line: str) -> None:
 
 # ----------------------------------------------------------------
 # Main loop -- opens every APPROVE decision, then polls until every
-# position is closed. Position recycling (spec section 10) is NOT
-# implemented: a position that closes mid-day is terminal, its freed
-# capital sits idle for the rest of the day (see NEXTSTEPS.md).
+# position is closed. Position recycling (spec section 10), built
+# 2026-09-02: when a premium position closes, attempt_premium_recycle()
+# tries to open one replacement with the freed capital before the day's
+# entry cutoff (config.NEW_ENTRY_CUTOFF_TIME) -- see that function's
+# docstring. Directional never recycles -- it enters once in the morning
+# only (spec section 17, unchanged) and each position now exits
+# config.DIRECTIONAL_HOLD_MINUTES after its own entry instead of at a
+# fixed clock time (see config.py's 2026-09-02 comment).
 # ----------------------------------------------------------------
 def run(risk_decisions_path: str) -> None:
     import json
@@ -407,14 +484,35 @@ def run(risk_decisions_path: str) -> None:
         open_directional_position(rm.Decision(**d))
         for d in data["directional_decisions"] if d["approved"]
     ]
+    # Every directional TICKER Risk Manager evaluated (approved or
+    # rejected-for-cost/mismatch) equals the day's original selected count
+    # -- size_directional_positions()/build_directional_candidates() both
+    # return one Decision per input candidate, so this is recoverable from
+    # the decisions file alone without re-reading selection-result.json.
+    num_directional_selected = len(data["directional_decisions"])
 
     print(f"[{datetime.datetime.now(config.ET).isoformat()}] Opened "
           f"{len(premium_positions)} premium + {len(directional_positions)} "
           f"directional position(s). Monitoring...", flush=True)
 
     while premium_positions or directional_positions:
-        premium_positions = [p for p in premium_positions if not tick_premium_position(p)]
+        still_open_premium = []
+        closed_count = 0
+        for p in premium_positions:
+            if tick_premium_position(p):
+                closed_count += 1
+            else:
+                still_open_premium.append(p)
+        premium_positions = still_open_premium
+
         directional_positions = [p for p in directional_positions if not tick_directional_position(p)]
+
+        for _ in range(closed_count):
+            held = ({p.ticker for p in premium_positions} | {p.ticker for p in directional_positions})
+            new_position = attempt_premium_recycle(held, num_directional_selected)
+            if new_position is not None:
+                premium_positions.append(new_position)
+
         # Heartbeat for manual monitoring (stdout, captured by
         # run_morning_trigger.sh into logs/<date>-execution-run.out) --
         # entries/exits themselves are logged separately by log_entry/

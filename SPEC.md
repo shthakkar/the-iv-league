@@ -35,6 +35,22 @@ The system should dynamically check whether a valid 0DTE expiration exists for
 each underlying on the current trading day. If no 0DTE chain is available,
 that ticker is skipped for the day.
 
+**Changed 2026-09-02 (no-0dte-fallback-policy, `strategy_engine.py`'s
+`rank_ticker()`)**: "skipped" is now a fallback, not a dead end. A ticker with
+no usable 0DTE chain is retried once against the next real trading day's
+chain (via Alpaca's own calendar, no local weekday/holiday math) before being
+skipped outright — surfaced live 2026-09-01, when only SPY/QQQ had a same-day
+chain and the other 6 tickers had genuinely none. Applies at the
+universe-ranking step, before the premium/directional split, so a
+1DTE-substituted ticker can land on either side. **Position lifecycle is
+unchanged**: this only changes which expiration gets ranked/sized/traded —
+the resulting position is still force-closed same-day like every other
+position (spec §9/§18's exit rules, `execution_agent.py`), never held
+overnight. That's what keeps this a small, contained change rather than the
+"switch the whole strategy to 1DTE" idea rejected on 2026-08-31 (which would
+have needed real overnight position persistence, calendar logic, and
+re-tuned exit timing — see PROGRESS.md's architecture-decisions entry).
+
 ## 3. Daily Timeline
 
 **9:30 AM ET — Market Open.** Do not immediately trade. Begin collecting price,
@@ -138,6 +154,15 @@ hardcoded $100k above — see PROGRESS.md's Risk Manager entry. Directional
 option budget is still a total across whatever's selected, not per
 position, as originally specified.
 
+**Changed 2026-09-02**: the 1%/3% figures above are now **0.5%/1.5%** —
+halved, a human decision after 3 real trading days showed directional
+losing on 5 of 6 trades (net -$5,671), corroborated by external research
+that long ATM/near-ATM 0DTE directional structures show negative median
+PNL on average (see `STRATEGY_CHANGELOG.md`'s 2026-09-02 entry for the
+full evidence and sources). Premium's complement formula is unchanged,
+just now summing against the smaller directional side: 0 selected → 100%
+premium, 1 → 99.5%, 2 → 99%, 3 → 98.5%.
+
 ## 8. Premium-Selling Position Allocation
 
 Target roughly equal allocation across the top 3: $95,000 / 3 ≈ $31,667. The
@@ -160,6 +185,18 @@ When a short-put position hits its profit target and closes intraday: mark
 capital available, recalculate chains/rankings, re-evaluate candidates, Risk
 Manager decides whether to open another position. Don't auto-re-enter the
 same underlying if already held. Consider a configurable cooldown.
+
+**Built 2026-09-02** (see PROGRESS.md's Component 6 entry and
+`STRATEGY_CHANGELOG.md`): implemented for the premium-selling side, spec-literal
+— triggers on **either** a short put's take-profit **or** stop-loss close (not
+just profit target as this section's opening sentence says), re-ranks the
+universe fresh, excludes any ticker currently held on either side, and sizes
+the top eligible candidate against one slot's worth of the current premium
+budget. Gated by a hard entry cutoff (2:30 PM ET / `config.
+NEW_ENTRY_CUTOFF_TIME`) — no new position, recycled or otherwise, opens after
+that time. No configurable cooldown implemented; re-entering the same ticker
+that just closed is allowed if it re-ranks eligible (not "already held" once
+closed). Directional side does **not** recycle — see §17's 2026-09-02 note.
 
 ## 11. Directional Strategy
 
@@ -197,6 +234,11 @@ The Analyst **does not have authority to place trades**.
 From the remaining 5: select up to 3, only candidates with sufficient
 confidence, undecided candidates skipped. Maximum total premium: $5,000.
 
+**Changed 2026-09-02**: "sufficient confidence" (`MIN_DIRECTIONAL_CONFIDENCE`)
+raised from 55 to **60** — a human decision after 3 real trading days showed
+two directional trades clearing the old bar only narrowly (55, 56) and both
+losing; see `STRATEGY_CHANGELOG.md`'s 2026-09-02 entry.
+
 ## 15. Directional Option Selection
 
 BULLISH → buy 0DTE call. BEARISH → buy 0DTE put. UNDECIDED → no trade. Strike
@@ -211,7 +253,10 @@ use less than the max. No requirement to trade without a strong signal.
 
 ## 17. Directional Entry
 
-~9:40 AM ET, after Analyst + Risk Manager complete their decisions.
+~9:40 AM ET, after Analyst + Risk Manager complete their decisions. Still
+fires only once per morning — **unchanged 2026-09-02**: only §18's exit
+duration changed, not entry frequency. Directional does not recycle
+(contrast §10, built for the premium side only).
 
 ## 18. Directional Exit
 
@@ -219,6 +264,19 @@ No fixed profit target, no trailing stop, no exit-when-ITM rule, no dynamic
 cap. **Close all directional positions at 2:30 PM ET**, regardless of
 profit/loss/ITM/IV/momentum. Clean research question: does the 9:40 AM
 directional signal predict price movement through 2:30 PM?
+
+**Changed 2026-09-02**: exit changed from the fixed 2:30 PM ET clock time to
+a fixed **30-minute duration from each position's own entry**
+(`config.DIRECTIONAL_HOLD_MINUTES`) — a human decision, informed by external
+research (the first-half-hour-predicts-last-half-hour finding concentrates
+predictive power at the END of the session, which a 2:30 PM exit never
+reached anyway; practitioner 0DTE backtests generally favor shorter holds
+once decay/spread costs are counted) and live evidence (a 2026-09-02 TSLA
+loss where the adverse move happened within the first hour of a ~4-hour
+hold). This changes what the "clean research question" above actually tests
+— no longer "does the signal predict price through a fixed 2:30 PM," but
+"does the signal predict price 30 minutes out." See `STRATEGY_CHANGELOG.md`'s
+2026-09-02 entry for the full sourcing.
 
 ## 19. Execution Agent
 

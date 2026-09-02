@@ -178,6 +178,36 @@ plan — see git log for the granular history.
   correctly rejected against the true remaining $28,000) confirms the
   string is accurate as-is. No code change made; the frozen `-manual.txt`
   log is left untouched as a historical record.
+- **`no-0dte-fallback-policy` decided and built, 2026-09-02**: left open
+  since the 2026-09-01 anomalous day (only SPY/QQQ had a same-day chain).
+  Decided: fall back to 1DTE, not skip. `strategy_engine.py`'s
+  `rank_ticker()` now retries once against the next real trading day's
+  chain (`_next_trading_day()`, via `TradingClient.get_calendar()` — no
+  local weekday/holiday math) before giving up, at the universe-ranking
+  step so a substituted ticker can land on either side of the
+  premium/directional split. Deliberately scoped small: **position
+  lifecycle is unchanged**, a 1DTE-substituted position is still
+  force-closed same-day like every other position (spec §9/§18,
+  `execution_agent.py`) — this is what keeps it from being the "switch the
+  whole strategy to 1DTE" idea already rejected 2026-08-31 (which would
+  have needed real overnight position persistence). `RankedCandidate`
+  already had a per-ticker `expiration` field from day one, just always
+  fed the same value — no interface change needed downstream in
+  `risk_manager.py`/`execution_agent.py`, both build entirely off the OCC
+  symbols `strategy_engine.py` returns. TDD, 8 new tests
+  (`tests/test_strategy_engine.py`: `NextTradingDayTests`,
+  `RankTicker1DTEFallbackTests`, `RankUniverseFallbackWiringTests`),
+  101/101 tests passing across the full suite. Live-sanity-checked against
+  real Alpaca data (`_next_trading_day('2026-09-02')` correctly returned
+  `'2026-09-03'` via the real calendar API; normal ranking unaffected)
+  without touching today's real `logs/cache/ranking-2026-09-02.json`. Not
+  yet live-validated against an actual no-0DTE ticker (today had a full
+  8-ticker chain) — see `NEXTSTEPS.md`. See `SPEC.md` §2 and
+  `STRATEGY_CHANGELOG.md`'s matching 2026-09-02 entry.
+- **Naked long vs. defined-risk spread for directional trades — decided,
+  2026-09-02: keep the naked long.** Closes the structural question
+  deferred in the 2026-09-02 directional-risk-cut entry below. No code
+  change.
 
 ## Component 1: Strategy Engine — ✅ DONE, tested
 
@@ -223,16 +253,16 @@ real daily-bar closes (~47-48% ratio on exactly the affected three tickers).
 Fixed by using last trade price as the spot source (simpler than a
 bid/ask-with-fallback — these are all liquid names).
 
-## Component 2: Premium-selling execution — ⛔ NOT STARTED
+## Component 2: Premium-selling execution — ✅ SUPERSEDED, no action needed
 
-Deliberately skipped for now: market was closed, so live order
-placement/fills can't be meaningfully tested. Design (agreed, not yet
-built): take the top-`PREMIUM_SELL_COUNT` tickers from the Strategy Engine,
-build a credit spread (sell the 15Δ put already found, buy a further-OTM put
-for protection, width configurable), place via the MCP server's multi-leg
-option order tool (`place_option_order` — confirmed to support multi-leg
-during the building-block spike), apply spec §9 exit rules (50% TP / 3× SL /
-EOD close).
+This entry's original design (credit spread: sell the 15Δ put, buy a
+further-OTM protective put) was superseded 2026-08-30 by the CSP switch (see
+"Architecture decisions made" above and `SPEC.md` §6) before it was ever
+built — premium-selling execution is live and covered by Component 6
+(`execution_agent.py`)'s `sell_to_open`/standing-stop CSP flow instead.
+Confirmed 2026-09-02 (explicit human decision): no defined-risk-spread work
+is needed here: this component is done via the different path Component 6
+already took, not a gap.
 
 ## Component 3: Analyst Agent — ✅ DONE, tested live
 
@@ -713,6 +743,31 @@ separate backtest/paper-trading stage. Accepted trade-off for V1 (paper
 account only, human reviews every proposal interactively before
 anything's implemented) — revisit if this ever needs to run with less
 human oversight per cycle.
+
+**Extended 2026-09-02 — dedicated profitability analysis + WebSearch**:
+prior cycles focused almost entirely on process correctness ("were the
+decisions made right"), not profitability ("did they make money, and
+what would"). `.claude/agents/strategist.md` gains:
+- A new §6 "Profitability Analysis" section (proposals renumbered to §7)
+  — grounds itself in real per-trade P&L plus the cross-day trend now
+  read from `dashboard/data.json`'s precomputed `strategy_stats`/
+  `daily_summaries` (no need to re-derive cross-day aggregates from raw
+  logs), looks for concrete loss/gain drivers (side, exit reason, ticker),
+  and produces 0-N profitability suggestions tagged `reduce-losses` /
+  `improve-profits` / `both` — same confidence discipline as regular
+  proposals (no numeric tuning claimed as reliable from a small sample).
+- **`WebSearch` added to its tool list** — can check a pattern it finds
+  against external research (holding-period effects, decay mechanics,
+  directional-vs-premium performance, etc.), with explicit guidance to
+  weigh an academic/data-backed source over an unsourced blog post and
+  cite every source's URL it actually uses. This mirrors what the human
+  did manually for the 2026-09-02 allocation/exit-timing changes (see
+  `STRATEGY_CHANGELOG.md`'s entry) — now built into the agent itself
+  going forward instead of being a one-off human research pass.
+- Not yet live-validated — same restart caveat as the 2026-09-01
+  `analyst.md` edit (subagent definition changes need a Claude Code
+  restart to actually load in a running session; see `PROGRESS.md`'s
+  gotchas section and `NEXTSTEPS.md`).
 
 ## Dashboard — ✅ REBUILT with real data, branded "The IV League," 2026-08-31
 

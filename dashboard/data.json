@@ -1,10 +1,10 @@
 {
-  "updated_at": "2026-09-02T00:03:18-07:00",
+  "updated_at": "2026-09-02T12:10:55-07:00",
   "strategy_version": "v1.0",
   "account": {
     "starting_balance": 100000.0,
-    "balance": 95272.41,
-    "daily_pnl": -4723.0
+    "balance": 94338.18,
+    "daily_pnl": -5656.0
   },
   "daily_summaries": [
     {
@@ -20,27 +20,90 @@
       "pnl_pct": -0.8285,
       "trades_count": 4,
       "win_rate": 0.25
+    },
+    {
+      "date": "2026-09-02",
+      "pnl": -933.0,
+      "pnl_pct": -0.9792,
+      "trades_count": 4,
+      "win_rate": 0.5
     }
   ],
   "strategy_stats": [
     {
       "strategy": "premium-selling",
-      "trades": 3,
-      "wins": 2,
+      "trades": 5,
+      "wins": 4,
       "losses": 1,
-      "win_rate": 0.6667,
-      "total_pnl": -13.0
+      "win_rate": 0.8,
+      "total_pnl": 15.0
     },
     {
       "strategy": "directional",
-      "trades": 4,
+      "trades": 6,
       "wins": 1,
-      "losses": 3,
-      "win_rate": 0.25,
-      "total_pnl": -4710.0
+      "losses": 5,
+      "win_rate": 0.1667,
+      "total_pnl": -5671.0
     }
   ],
   "trades": [
+    {
+      "id": "2026-09-02-TSLA260902P00350000",
+      "date": "2026-09-02",
+      "timestamp": "2026-09-02T10:14:30.481502-04:00",
+      "ticker": "TSLA",
+      "strategy": "directional",
+      "side": "LONG_PUT",
+      "entry_price": 1.09,
+      "quantity": 5,
+      "exit_price": 0.2,
+      "pnl": -445.0,
+      "status": "CLOSED",
+      "exit_reason": "time_exit_1430"
+    },
+    {
+      "id": "2026-09-02-AMZN260902C00255000",
+      "date": "2026-09-02",
+      "timestamp": "2026-09-02T10:14:30.286298-04:00",
+      "ticker": "AMZN",
+      "strategy": "directional",
+      "side": "LONG_CALL",
+      "entry_price": 1.26,
+      "quantity": 6,
+      "exit_price": 0.4,
+      "pnl": -516.0,
+      "status": "CLOSED",
+      "exit_reason": "time_exit_1430"
+    },
+    {
+      "id": "2026-09-02-NVDA260902P00220000",
+      "date": "2026-09-02",
+      "timestamp": "2026-09-02T10:14:29.374358-04:00",
+      "ticker": "NVDA",
+      "strategy": "premium-selling",
+      "side": "SHORT_PUT",
+      "entry_price": 0.33,
+      "quantity": 1,
+      "exit_price": 0.19,
+      "pnl": 14.0,
+      "status": "CLOSED",
+      "exit_reason": "take_profit"
+    },
+    {
+      "id": "2026-09-02-AAPL260902P00320000",
+      "date": "2026-09-02",
+      "timestamp": "2026-09-02T10:14:28.486279-04:00",
+      "ticker": "AAPL",
+      "strategy": "premium-selling",
+      "side": "SHORT_PUT",
+      "entry_price": 0.16,
+      "quantity": 2,
+      "exit_price": 0.09,
+      "pnl": 14.0,
+      "status": "CLOSED",
+      "exit_reason": "take_profit"
+    },
     {
       "id": "2026-09-01-NVDA260902C00220000",
       "date": "2026-09-01",

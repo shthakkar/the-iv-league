@@ -14,10 +14,26 @@ from alpaca.trading.enums import OrderStatus
 
 import execution_agent as ea
 import risk_manager as rm
+import strategy_engine as se
 
 
 def _dt(hour, minute):
     return datetime.datetime(2026, 8, 31, hour, minute, tzinfo=datetime.timezone.utc)
+
+
+def _ranked_premium_candidate(ticker, strike, credit_price):
+    """A minimal RankedCandidate with only the fields decide_premium_recycle
+    (via rm.build_premium_candidates) actually reads populated meaningfully
+    -- same convention as test_risk_manager.py's _ranked() helper."""
+    return se.RankedCandidate(
+        ticker=ticker, spot=strike, expiration="2026-09-02", atm_strike=strike,
+        atm_call_iv=0.2, atm_put_iv=0.2, atm_iv=0.2,
+        atm_call_symbol=f"{ticker}CALL", atm_call_ask=1.0,
+        atm_put_symbol=f"{ticker}PUT", atm_put_ask=1.0,
+        put_15d_symbol=f"{ticker}260902P{int(strike*1000):08d}", put_15d_strike=strike,
+        put_15d_delta=-0.15, put_15d_iv=0.2, put_15d_bid=credit_price,
+        iv_skew=0.02,
+    )
 
 
 class CheckPremiumExitTests(unittest.TestCase):
@@ -62,23 +78,37 @@ class CheckPremiumExitTests(unittest.TestCase):
 
 
 class CheckDirectionalExitTests(unittest.TestCase):
+    # Changed 2026-09-02: relative to the position's OWN entry
+    # (config.DIRECTIONAL_HOLD_MINUTES = 30), not a fixed clock time --
+    # see config.py's comment.
     def setUp(self):
         self.position = ea.DirectionalPosition(
             ticker="META", symbol="META260831C00577500", qty=2,
             entry_price=4.00, entered_at=_dt(9, 41),
         )
 
-    def test_no_exit_before_time_cutoff(self):
-        reason = ea.check_directional_exit(self.position, now=_dt(14, 0))
+    def test_no_exit_before_hold_duration_elapsed(self):
+        reason = ea.check_directional_exit(self.position, now=_dt(10, 0))  # 19 min in
         self.assertIsNone(reason)
 
-    def test_time_exit_at_cutoff(self):
-        reason = ea.check_directional_exit(self.position, now=_dt(14, 30))
+    def test_time_exit_exactly_at_hold_duration(self):
+        reason = ea.check_directional_exit(self.position, now=_dt(10, 11))  # exactly 30 min
         self.assertEqual(reason, "TIME")
 
-    def test_time_exit_after_cutoff(self):
-        reason = ea.check_directional_exit(self.position, now=_dt(15, 0))
+    def test_time_exit_after_hold_duration(self):
+        reason = ea.check_directional_exit(self.position, now=_dt(14, 0))  # hours later
         self.assertEqual(reason, "TIME")
+
+    def test_uses_this_position_entered_at_not_a_global_clock_time(self):
+        # A later-entered position (e.g. from a delayed manual run) isn't
+        # exited just because the clock happens to be past where the OLD
+        # fixed 2:30 PM cutoff used to be -- only its OWN 30 minutes matter.
+        late_position = ea.DirectionalPosition(
+            ticker="AMZN", symbol="AMZN260902C00255000", qty=6,
+            entry_price=1.26, entered_at=_dt(14, 15),
+        )
+        reason = ea.check_directional_exit(late_position, now=_dt(14, 30))  # only 15 min in
+        self.assertIsNone(reason)
 
 
 class BuildPremiumPositionTests(unittest.TestCase):
@@ -139,6 +169,66 @@ class FormatEntryLineTests(unittest.TestCase):
             "ENTRY 2026-08-31T09:41:00+00:00 META META260831C00577500 "
             "qty=2 price=4.15 side=BUY_TO_OPEN",
         )
+
+
+class DecidePremiumRecycleTests(unittest.TestCase):
+    # Spec section 10, built 2026-09-02. premium_ranked mirrors a FRESH
+    # strategy_engine ranking's premium-selling side, already sorted by
+    # IV skew descending.
+    def setUp(self):
+        self.premium_ranked = [
+            _ranked_premium_candidate("NVDA", strike=220.0, credit_price=0.30),
+            _ranked_premium_candidate("META", strike=250.0, credit_price=0.40),
+            _ranked_premium_candidate("AAPL", strike=320.0, credit_price=0.20),
+        ]
+
+    def test_picks_top_ranked_candidate_not_already_held(self):
+        decision = ea.decide_premium_recycle(
+            self.premium_ranked, held_tickers=set(), total_premium_budget=90_000, now=_dt(11, 0),
+        )
+        self.assertTrue(decision.approved)
+        self.assertEqual(decision.ticker, "NVDA")  # top of the ranked list
+
+    def test_skips_a_held_ticker_and_picks_the_next_eligible_one(self):
+        decision = ea.decide_premium_recycle(
+            self.premium_ranked, held_tickers={"NVDA"}, total_premium_budget=90_000, now=_dt(11, 0),
+        )
+        self.assertTrue(decision.approved)
+        self.assertEqual(decision.ticker, "META")
+
+    def test_none_when_every_ranked_candidate_is_already_held(self):
+        decision = ea.decide_premium_recycle(
+            self.premium_ranked, held_tickers={"NVDA", "META", "AAPL"},
+            total_premium_budget=90_000, now=_dt(11, 0),
+        )
+        self.assertIsNone(decision)
+
+    def test_none_past_the_entry_cutoff_time(self):
+        # config.NEW_ENTRY_CUTOFF_TIME is 14:30 ET -- past it, no new
+        # position is opened even if everything else would otherwise approve.
+        decision = ea.decide_premium_recycle(
+            self.premium_ranked, held_tickers=set(), total_premium_budget=90_000, now=_dt(14, 30),
+        )
+        self.assertIsNone(decision)
+
+    def test_none_when_top_eligible_candidate_is_unaffordable_within_one_slot(self):
+        # NVDA's strike (220) x 100 = $22,000/contract; a tiny slot budget
+        # can't afford even 1 contract -- REJECTed, not forced onto a
+        # cheaper name in the same call (that's what the ranking already
+        # ordered by preference for -- recycling doesn't second-guess it).
+        decision = ea.decide_premium_recycle(
+            self.premium_ranked, held_tickers=set(), total_premium_budget=100, now=_dt(11, 0),
+        )
+        self.assertIsNone(decision)
+
+    def test_sizes_against_one_slot_not_the_whole_current_budget(self):
+        # total_premium_budget=90,000 / PREMIUM_SELL_COUNT(3) = 30,000/slot.
+        # NVDA @ strike 220 -> $22,000/contract -> exactly 1 contract fits
+        # a single slot, not floor(90,000/22,000)=4.
+        decision = ea.decide_premium_recycle(
+            self.premium_ranked, held_tickers=set(), total_premium_budget=90_000, now=_dt(11, 0),
+        )
+        self.assertEqual(decision.quantity, 1)
 
 
 class FormatDecisionsLoadedLineTests(unittest.TestCase):

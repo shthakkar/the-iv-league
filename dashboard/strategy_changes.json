@@ -1,0 +1,93 @@
+[
+  {
+    "date": "2026-08-31",
+    "change": "Persist IV-skew ranking snapshot",
+    "before": "not persisted, stdout only",
+    "after": "persists to logs/cache/ranking-<date>.json",
+    "suggested_by": "AI"
+  },
+  {
+    "date": "2026-08-31",
+    "change": "Decisions-file provenance",
+    "before": "no record of which decisions-file version traded",
+    "after": "generated_at timestamp + execution_agent logs the file it loaded",
+    "suggested_by": "AI"
+  },
+  {
+    "date": "2026-08-31",
+    "change": "Premium/directional partition bug",
+    "before": "resolved via full ranked lookup, could leak a premium ticker into directional",
+    "after": "scoped to directional-side lookup only, explicit REJECT on mismatch",
+    "suggested_by": "AI"
+  },
+  {
+    "date": "2026-08-31",
+    "change": "Premium entry log legibility",
+    "before": "no real armed TP/SL threshold logged",
+    "after": "ENTRY log lines include tp=/sl= from the actual fill",
+    "suggested_by": "AI"
+  },
+  {
+    "date": "2026-08-31",
+    "change": "Greeks-feed source logging",
+    "before": "no record of which greeks source was used per ticker",
+    "after": "greeks_source field (alpaca/black_scholes_fallback/unavailable) + stderr log",
+    "suggested_by": "AI"
+  },
+  {
+    "date": "2026-08-31",
+    "change": "Directional capital allocation formula",
+    "before": "flat 5% of balance regardless of breadth",
+    "after": "1% per selected stock, capped at 3%",
+    "suggested_by": "Human"
+  },
+  {
+    "date": "2026-08-31",
+    "change": "Premium capital allocation formula",
+    "before": "fixed 95% of balance",
+    "after": "complement of directional % (100% - directional%)",
+    "suggested_by": "Human"
+  },
+  {
+    "date": "2026-09-01",
+    "change": "News-cache crowding bug",
+    "before": "1 combined API call, limit=50 shared across all 8 tickers",
+    "after": "1 request per ticker, limit=10 each",
+    "suggested_by": "AI+Human"
+  },
+  {
+    "date": "2026-09-01",
+    "change": "Analyst raw-input persistence",
+    "before": "no persisted raw-input audit trail",
+    "after": "persists analyst-observation-<date>-<ticker>.json per dispatch",
+    "suggested_by": "AI"
+  },
+  {
+    "date": "2026-09-02",
+    "change": "Directional exit rule",
+    "before": "fixed 2:30 PM ET clock time",
+    "after": "30 min after each position's own entry",
+    "suggested_by": "Human"
+  },
+  {
+    "date": "2026-09-02",
+    "change": "MIN_DIRECTIONAL_CONFIDENCE",
+    "before": "55",
+    "after": "60",
+    "suggested_by": "Human"
+  },
+  {
+    "date": "2026-09-02",
+    "change": "Directional capital allocation",
+    "before": "1% per stock, capped at 3%",
+    "after": "0.5% per stock, capped at 1.5%",
+    "suggested_by": "Human"
+  },
+  {
+    "date": "2026-09-02",
+    "change": "Premium-selling position recycling (spec §10)",
+    "before": "not implemented, freed capital sat idle",
+    "after": "TP/SL-triggered re-rank + recycle, cutoff-gated at 2:30 PM ET",
+    "suggested_by": "Human"
+  }
+]

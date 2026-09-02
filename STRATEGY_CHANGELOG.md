@@ -201,3 +201,135 @@ passing.
 n=1/anomalous-day discipline); the no-0DTE-fallback-policy and
 decay-mitigation questions remain open for a future cycle with more
 evidence (per-trade IV logging in particular).
+
+---
+
+## 2026-09-02 — Directional risk cut after 3 days of live evidence + external research
+
+**Trigger**: not a Strategist Agent post-mortem cycle — a direct human
+decision made mid-conversation after reviewing 3 real trading days'
+combined track record (2026-08-31 through 2026-09-02) plus targeted web
+research on 0DTE holding periods and directional-vs-premium option
+strategy performance.
+
+### The evidence
+
+| | Trades | Wins | Net P&L |
+|---|---|---|---|
+| Premium-selling (short puts) | 5 | 4 | +$15 (~breakeven) |
+| Directional (long calls/puts) | 6 | 1 (META, +$130) | **-$5,671** |
+
+Directional lost on 5 of 6 trades across 3 days, including a severe one
+(SPY, -$3,960, an 86% loss) and two 2026-09-02 trades that cleared the
+then-55 confidence bar only narrowly (55, 56) and both lost. A live
+underlying-move check on the 2026-09-02 pair showed both moved <0.35% net
+over the full hold, yet the options lost 68% (AMZN) and 82% (TSLA) of
+premium — TSLA's put was hurt by a mid-session spike *against* the thesis
+(to $356.56, +1.08% above entry) within the first hour, not by the net
+end-of-day move.
+
+**External research** (human-directed, sources below):
+- Long ATM/near-ATM 0DTE directional structures show negative median PNL
+  on average; short-premium structures (selling slightly OTM
+  calls/puts) are positive in up to 75% of observations — a direct match
+  to this system's own premium-vs-directional split in the table above.
+  ([Vilkov et al., 0dte-strategies paper](https://github.com/vilkovgr/0dte-strategies/blob/main/docs/paper/paper-annotated.md))
+- Entry *clock time* (10:00/13:00/15:00/prior-day-close ET, all held to
+  the same close) barely changes the qualitative result — the structural
+  finding above holds regardless of exactly when you enter. This argues
+  the earlier 10-min-vs-30-min observation-window debate (see this file's
+  2026-09-01 entry) is probably not the lever that matters.
+  ([same source](https://github.com/vilkovgr/0dte-strategies/blob/main/docs/paper/paper-annotated.md))
+- The well-cited first-half-hour-predicts-last-half-hour intraday momentum
+  finding (Gao/Han/Xie/Zhou) is specifically about the FIRST 30 minutes
+  predicting the LAST 30 minutes of the session (a small effect, R²≈1.6%,
+  rising to ~3% on high-volatility days) — not about predicting the
+  middle of the day. A 2:30 PM exit never reaches that window at all.
+  ([SSRN paper](https://www.smallake.kr/wp-content/uploads/2015/01/SSRN-id2440866.pdf))
+- Practitioner 0DTE backtests generally favor short holds once real
+  option costs (theta, spread, slippage) are counted — one cited backtest
+  found a 5-minute opening-range strategy nearly doubled returns vs.
+  15/30-minute ranges while reducing drawdown; another successful
+  approach averaged ~52 minutes in the market per day, not hours.
+  ([SpotGamma 0DTE strategy guide](https://spotgamma.com/0dte-options-strategy/); general practitioner-blog sourcing, less rigorous than the two academic papers above)
+
+### Decisions (human, not Strategist Agent proposals)
+
+| # | Change | Rationale |
+|---|---|---|
+| 1 | Directional exit: fixed 2:30 PM ET clock time → **30 minutes after each position's own entry** (`config.DIRECTIONAL_HOLD_MINUTES`) | Multi-hour holds accumulate decay cost without reaching the session window (last 30 min) where the one well-documented early-signal predictive edge actually concentrates; today's TSLA adverse move happened in the first hour regardless |
+| 2 | `MIN_DIRECTIONAL_CONFIDENCE`: 55 → **60** | Both 2026-09-02 trades cleared the old bar only narrowly (55, 56) and both lost — a stricter bar means fewer, more selective directional trades |
+| 3 | `DIRECTIONAL_PCT_PER_STOCK`: 1% → **0.5%** of balance per selected stock (`DIRECTIONAL_MAX_PCT`: 3% → **1.5%** correspondingly) | A long option's max loss is already hard-capped at the premium paid — no additional stop-loss mechanism was needed to bound risk further. The lever that matters given directional's persistent negative tilt is position size, not a new exit rule |
+| 4 | **Position recycling (spec §10), built for the first time** — premium-selling side only. When a short put closes (TP or SL), re-rank fresh, exclude tickers held elsewhere, size the top eligible candidate against one slot's worth of the current premium budget, subject to a hard cutoff (no new entries after 2:30 PM ET / `config.NEW_ENTRY_CUTOFF_TIME`). Directional does NOT recycle — still enters once per morning only | Previously cut from MVP scope; capital freed by an early TP/SL sat idle for the rest of the day (a concrete, real cost — e.g. 2026-08-31's two early CSP closes). Scoped to premium only since that's the side with the demonstrated positive track record |
+
+### Before / after
+
+| | Before | After |
+|---|---|---|
+| Directional exit rule | fixed 2:30 PM ET clock time, all positions | `entered_at + 30 min`, per position |
+| `MIN_DIRECTIONAL_CONFIDENCE` | 55 | 60 |
+| `DIRECTIONAL_PCT_PER_STOCK` / `DIRECTIONAL_MAX_PCT` | 1% / 3% | 0.5% / 1.5% |
+| Directional budget, 1 selected ($100k account) | $1,000 | $500 |
+| Directional budget, 3 selected | $3,000 | $1,500 |
+| Premium-selling position recycling | not implemented (spec §10) | implemented — TP/SL-triggered, re-ranked, cutoff-gated |
+| `config.DIRECTIONAL_CLOSE_TIME` | existed, fixed clock time | removed; replaced by `DIRECTIONAL_HOLD_MINUTES` (duration) + `NEW_ENTRY_CUTOFF_TIME` (same clock value, new purpose: gates recycling entries, not directional exit) |
+
+### Implementation
+
+`config.py`, `execution_agent.py` (`check_directional_exit` changed to a
+duration check; new `decide_premium_recycle()`/`attempt_premium_recycle()`;
+`run()`'s main loop detects premium closures and attempts recycling before
+the cutoff), `risk_manager.py` (docstring only — `compute_budgets()`'s logic
+was already parameterized off `config.py`, no code change needed), `SPEC.md`
+(§7/§10/§14/§17/§18 all get dated "Changed 2026-09-02" notes). TDD:
+`tests/test_execution_agent.py` gains `DecidePremiumRecycleTests` (5 tests)
+and rewrites `CheckDirectionalExitTests` for the new duration-based
+semantics (4 tests); `tests/test_risk_manager.py`'s `ComputeBudgetsTests`
+and one `EvaluateTests` case updated for the new 0.5%/1.5% figures. 91/91
+tests passing across the full suite.
+
+**Not done in this cycle**: the bigger structural question raised alongside
+this research (whether a naked long call/put is even the right instrument
+for testing a short-horizon directional signal, vs. e.g. a defined-risk
+spread or risk-reversal structure) is explicitly deferred — flagged as an
+open question for a future cycle, not something to change without more
+deliberation. Per-trade IV logging (to separate theta from vega/IV-crush in
+future post-mortems) also remains undone, tracked in `NEXTSTEPS.md`.
+
+---
+
+## 2026-09-02 (same day, later) — Two open questions closed
+
+Two items left open by the entries above, closed by direct human decision
+mid-conversation (not a Strategist Agent cycle):
+
+### `no-0dte-fallback-policy` — decided: fall back to 1DTE, same-day close unchanged
+
+Left open in the 2026-09-01 entry above (proposal 2, "deferred, still
+open") and in the 2026-09-02 entry's evidence section. Decided: when a
+ticker has no usable same-day (0DTE) chain, `strategy_engine.py`'s
+`rank_ticker()` retries once against the next real trading day's chain
+(`_next_trading_day()`, via Alpaca's own calendar) instead of skipping the
+ticker outright. Applies at the universe-ranking step, before the
+premium/directional split — a 1DTE-substituted ticker can land on either
+side, same as any other candidate. **Position lifecycle is unchanged**:
+the resulting position is still force-closed same-day like every other
+position, never held overnight — this was the specific design choice that
+kept the change small (no new calendar/position-persistence logic),
+deliberately avoiding the "switch the whole strategy to 1DTE" idea already
+rejected on 2026-08-31. See `SPEC.md` §2's matching "Changed 2026-09-02"
+note. TDD, 8 new tests in `tests/test_strategy_engine.py`
+(`NextTradingDayTests`, `RankTicker1DTEFallbackTests`,
+`RankUniverseFallbackWiringTests`); 101/101 tests passing across the full
+suite after. Live-sanity-checked against real Alpaca data (today's
+universe still ranks normally, `_next_trading_day('2026-09-02')` correctly
+returned `'2026-09-03'` via the real calendar API) without touching
+today's actual `logs/cache/ranking-2026-09-02.json` (a real trading day's
+provenance record, left untouched).
+
+### Naked long vs. defined-risk spread — decided: keep the naked long
+
+The structural question deferred in the entry above (whether a naked long
+call/put is the right instrument at all vs. a defined-risk spread or
+risk-reversal). Decided: **no change** — naked long stays. No code or
+config change; this just closes the open question in `NEXTSTEPS.md`.

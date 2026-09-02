@@ -101,9 +101,10 @@ def get_account_snapshot() -> AccountSnapshot:
 
 
 def compute_budgets(snapshot: AccountSnapshot, num_directional_selected: int) -> Budgets:
-    """Directional budget is 1% of balance per selected directional candidate,
-    capped at 3% total regardless of count (config.DIRECTIONAL_PCT_PER_STOCK /
-    DIRECTIONAL_MAX_PCT -- see config.py's comment for the 2026-08-31 rationale).
+    """Directional budget is config.DIRECTIONAL_PCT_PER_STOCK of balance per
+    selected directional candidate, capped at config.DIRECTIONAL_MAX_PCT total
+    regardless of count -- see config.py's comments for the 2026-08-31 (formula
+    introduced) and 2026-09-02 (percentages halved) rationale.
     num_directional_selected is the count from the day's selection, not the
     count that ends up APPROVED after sizing/rejection -- the budget reflects
     conviction/breadth at selection time.
