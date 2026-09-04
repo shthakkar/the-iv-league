@@ -1,10 +1,10 @@
 {
-  "updated_at": "2026-09-02T12:10:55-07:00",
+  "updated_at": "2026-09-03T19:20:38-07:00",
   "strategy_version": "v1.0",
   "account": {
     "starting_balance": 100000.0,
-    "balance": 94338.18,
-    "daily_pnl": -5656.0
+    "balance": 94334.58,
+    "daily_pnl": -5659.0
   },
   "daily_summaries": [
     {
@@ -27,27 +27,62 @@
       "pnl_pct": -0.9792,
       "trades_count": 4,
       "win_rate": 0.5
+    },
+    {
+      "date": "2026-09-03",
+      "pnl": -3.0,
+      "pnl_pct": -0.0032,
+      "trades_count": 2,
+      "win_rate": 0.5
     }
   ],
   "strategy_stats": [
     {
       "strategy": "premium-selling",
-      "trades": 5,
-      "wins": 4,
+      "trades": 6,
+      "wins": 5,
       "losses": 1,
-      "win_rate": 0.8,
-      "total_pnl": 15.0
+      "win_rate": 0.8333,
+      "total_pnl": 17.0
     },
     {
       "strategy": "directional",
-      "trades": 6,
+      "trades": 7,
       "wins": 1,
-      "losses": 5,
-      "win_rate": 0.1667,
-      "total_pnl": -5671.0
+      "losses": 6,
+      "win_rate": 0.1429,
+      "total_pnl": -5676.0
     }
   ],
   "trades": [
+    {
+      "id": "2026-09-03-TSLA260904C00382500",
+      "date": "2026-09-03",
+      "timestamp": "2026-09-03T13:49:06.905932-04:00",
+      "ticker": "TSLA",
+      "strategy": "directional",
+      "side": "LONG_CALL",
+      "entry_price": 6.3,
+      "quantity": 1,
+      "exit_price": 6.25,
+      "pnl": -5.0,
+      "status": "CLOSED",
+      "exit_reason": "time_exit_1430"
+    },
+    {
+      "id": "2026-09-03-NVDA260904P00222500",
+      "date": "2026-09-03",
+      "timestamp": "2026-09-03T13:49:06.617018-04:00",
+      "ticker": "NVDA",
+      "strategy": "premium-selling",
+      "side": "SHORT_PUT",
+      "entry_price": 0.21,
+      "quantity": 1,
+      "exit_price": 0.19,
+      "pnl": 2.0,
+      "status": "CLOSED",
+      "exit_reason": "eod"
+    },
     {
       "id": "2026-09-02-TSLA260902P00350000",
       "date": "2026-09-02",
